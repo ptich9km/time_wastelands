@@ -264,7 +264,7 @@ describe('stage 6a: WebSocket battle and post-battle sync', () => {
     const after = getCharacter(app.db)!;
     expect(after.xp).toBe(8); // 590 + 18 - 600
     expect(after.level).toBe(2);
-    expect(after.hp_current).toBe(75); // level-up restores HP
+    expect(after.hp_current).toBe(70); // level-up restores HP (stage 9 table: level 2 hpMax 70)
     expect(getInventory(app.db).some((r) => r.itemId === 'rat_pelt')).toBe(true);
 
     const second = syncAfterBattle({

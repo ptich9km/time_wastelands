@@ -11,6 +11,8 @@ export const LevelRowSchema = z.object({
   end: z.number().int().min(0),
   per: z.number().int().min(0),
   intel: z.number().int().min(0),
+  // Stage 9: cumulative perk points at this level (level 2 → 1, level 10 → 9).
+  perkPoints: z.number().int().min(0),
   apMax: z.number().int().min(0),
   hpMax: z.number().int().min(1),
 });

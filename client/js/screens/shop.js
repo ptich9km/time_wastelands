@@ -57,6 +57,7 @@ export function renderShop(root, shopId, options) {
 
   const moneyEl = document.createElement('p');
   moneyEl.className = 'location-meta';
+  moneyEl.title = t('ui.character.money_tooltip');
 
   const tabs = document.createElement('div');
   tabs.className = 'shop-tabs';
@@ -108,7 +109,7 @@ export function renderShop(root, shopId, options) {
     if (charRes.status === 200) character = charRes.data.character;
     if (invRes.status === 200) inventory = invRes.data.items ?? [];
     title.textContent = t(shop.nameKey);
-    moneyEl.textContent = t('ui.character.money', { money: character?.money ?? 0 });
+    moneyEl.textContent = `🪖 ${t('ui.character.money', { money: character?.money ?? 0 })}`;
     renderContent();
   }
 
@@ -187,7 +188,7 @@ export function renderShop(root, shopId, options) {
           character = res.data.character;
           inventory = res.data.inventory ?? inventory;
           shop = res.data.shop;
-          moneyEl.textContent = t('ui.character.money', { money: character.money });
+          moneyEl.textContent = `🪖 ${t('ui.character.money', { money: character.money })}`;
           renderContent();
         } else {
           errorEl.textContent = describeError(res.data);
@@ -253,7 +254,7 @@ export function renderShop(root, shopId, options) {
           character = res.data.character;
           inventory = res.data.inventory ?? inventory;
           shop = res.data.shop;
-          moneyEl.textContent = t('ui.character.money', { money: character.money });
+          moneyEl.textContent = `🪖 ${t('ui.character.money', { money: character.money })}`;
           messageEl.textContent = t('ui.shop.sold', { price: res.data.price });
           renderContent();
         } else {

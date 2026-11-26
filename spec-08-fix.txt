@@ -1,0 +1,72 @@
+Ты — senior full-stack разработчик. Замени валюту в UI с «Гильзы» на «Армейские жетоны» везде. Добавь лор-обоснование (крысы едят людей с жетонами) в лут и слухи. НЕ меняй код (characters.money остаётся), только i18n + данные.
+
+ЭТАПЫ 1–8 СДЕЛАНЫ. Не переделывай. Вот что есть:
+- data/i18n/ru.json и en.json (475/475).
+- UI: «Деньги: {money}», «Продано за 7 гильз», «Не хватает гильз».
+- data/mobs.json: 14 мобов, у каждого loot.guaranteed и loot.rare.
+- data/npcs.json: 3 NPC (Коваль, Вера, Молчун), у каждого dialogueKeys и rumorKeys.
+- data/items.json: ammo_light (15 гильз за 10 патронов), ammo_medium (20 за 8), ammo_heavy (30 за 5).
+
+ЗАДАЧА:
+
+1. i18n (RU + EN) — заменить:
+   - «Деньги» → «Армейские жетоны» (в ui.character.money, ui.shop.*, ui.battle.result.*, ui.npc.beggar.*).
+   - «Гильзы» → «Армейские жетоны» (в ui.shop.sold, ui.location.error.not_enough_money, ui.battle.result.money_lost, и т.д.).
+   - «Money» → «Army tags», «Shells» → «Army tags».
+   - Падежи: «жетон» / «жетона» / «жетонов» — использовать правильные формы.
+   - НЕ менять: «Старая монета» (item.old_coin) — это предмет, не валюта.
+   - Все ключи, где «гильзы»/«деньги» в смысле валюты — заменить.
+   - validate-i18n — зелёный.
+
+2. Лут мобов (data/mobs.json):
+   - Добавить во ВСЕХ мобов в loot.guaranteed (или loot.rare) — предмет «army_tag» (новый предмет).
+   - ВАЖНО: создать новый предмет в data/items.json:
+     {
+       "id": "army_tag",
+       "type": "misc",
+       "nameKey": "item.army_tag.name",
+       "descriptionKey": "item.army_tag.desc",
+       "icon": "🪖",
+       "price": 1,
+       "weight": 0.02,
+       "requirements": {},
+       "rarity": "common",
+       "durability": 1,
+       "tags": ["currency"]
+     }
+   - ВАЖНО: army_tag — это НЕ валюта в коде (money отдельно). Это ПРЕДМЕТ, который можно ПРОДАТЬ за money (price 1 = 1 жетон). Или можно оставить как лут-мусор (price 1).
+   - Добавить army_tag в loot.rare (шанс 30–50%) для мобов-животных (pipe_rat, ash_dog, rat_elder, gray_widow) — «крысы съели человека».
+   - Для людей (bandit_scout, bandit_brute) — army_tag в loot.guaranteed (у них свои жетоны).
+   - Для споровых (spore_youth, rot_walker, spore_hound, spore_priest) — army_tag в loot.rare (10–20%) — «не всё съели».
+
+3. Лор-фразы (data/i18n/ru.json и en.json):
+   - item.army_tag.name («Армейский жетон» / «Army tag»)
+   - item.army_tag.desc («Металлический медальон с номером. В пустоши заменяет деньги: их находят в желудках крыс, съевших людей. Не портятся, не подделываются.»)
+   - npc.koval.line.6 («Крысы в пустошах жрут людей. Иногда с жетонами. Убьёшь крысу — загляни в неё, может, повезёт.»)
+   - npc.molchun.rumor.2 («В глубоком штреке крысы особенно жирные. Видать, не одну роту сожрали.»)
+   - battle.log.loot_army_tag («В желудке {mob} — армейский жетон.»)
+
+4. UI (client/js/screens/character.js, shop.js, battle-result.js, location.js):
+   - Заменить «Деньги» на «Армейские жетоны» (через i18n, без хардкода).
+   - Добавить иконку 🪖 рядом с балансом (если хочешь — опционально).
+   - Тултип на балансе: «Армейские жетоны — валюта пустоши. Находятся в желудках крыс.» (i18n-ключ ui.character.money_tooltip).
+
+5. ТЕСТЫ:
+   - validate-i18n — зелёный.
+   - validate-data — зелёный.
+   - npm test — все зелёные (старые + новые, если добавил).
+   - Проверить, что army_tag в loot у всех мобов.
+
+ГРАНИЦЫ:
+- НЕ меняй characters.money, API /api/shop, поля JSON (кроме loot).
+- НЕ меняй цены (ammo_light = 15 жетонов за 10 патронов — оставить).
+- НЕ хардкодь строки — только i18n.
+
+КРИТЕРИЙ ПРИЁМКИ:
+1. validate-i18n — зелёный.
+2. validate-data — зелёный.
+3. Перезапуск сервера → в UI везде «Армейские жетоны» (магазин, персонаж, результат боя, милостыня).
+4. Убить крысу → в луте army_tag (шанс 30–50%).
+5. NPC Коваль → новая реплика про крыс и жетоны.
+6. Тултип на балансе — про жетоны.
+7. Этапы 1–8 не сломаны.

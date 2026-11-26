@@ -93,6 +93,8 @@ export function shootChance(params: {
   zone: Zone;
   distanceHexes: number;
   config: BattleConfig;
+  // Stage 9: accuracy bonus from the player's weapon skill (0..10).
+  weaponSkillBonus?: number;
 }): number {
   const { player, target, weapon, zone, distanceHexes, config } = params;
   const base = hitChance({
@@ -106,6 +108,7 @@ export function shootChance(params: {
     coverTarget: target.position === 'cover',
     config: config.hit,
     sniperConfig: config.distance.sniper,
+    weaponSkillBonus: params.weaponSkillBonus,
   });
   return clamp(base.chance + aimBonusFor(player.effects), 0, 100);
 }
@@ -149,6 +152,8 @@ export function applyAction(params: {
   mobs: Mob[];
   rng: () => number;
   lang: Lang;
+  // Stage 9: accuracy bonus from the player's weapon skill (0..10).
+  weaponSkillBonus?: number;
 }): ActionResult {
   const { state, action, config, items, rng, lang } = params;
 
@@ -161,6 +166,8 @@ export function applyAction(params: {
   if (!player) return { ok: false, error: 'invalid_target' };
 
   const entries: BattleLogEntry[] = [];
+  // Stage 9: set on a successful player shot, consumed by the service layer.
+  let weaponCategoryHit: string | undefined;
   const push = (type: BattleLogType, text: string, actor = PLAYER_ID): void => {
     const entry: BattleLogEntry = { round: next.round, actor, type, text, createdAt: nowIso() };
     entries.push(entry);
@@ -227,6 +234,7 @@ export function applyAction(params: {
         zone: action.zone,
         distanceHexes: distance,
         config,
+        weaponSkillBonus: params.weaponSkillBonus,
       });
 
       player.ap -= cost;
@@ -242,6 +250,7 @@ export function applyAction(params: {
       if (rng() * 100 >= chance) {
         push('miss', t('battle.log.shoot_miss', lang, { target: targetName }));
       } else {
+        weaponCategoryHit = weapon.weaponCategory;
         let damage = rollDamage({ weaponDamage: weapon.damage, ammoBonus: 0, rng });
         const crit = rollCrit({ intel: player.stats.intel, config: config.damage, rng });
         if (crit) damage = applyCrit(damage, config.damage);
@@ -393,7 +402,7 @@ export function applyAction(params: {
   if (next.status !== 'active') next.phase = 'finished';
   next.updatedAt = nowIso();
 
-  return { ok: true, newState: next, logEntries: entries };
+  return { ok: true, newState: next, logEntries: entries, weaponCategoryHit };
 }
 
 /**

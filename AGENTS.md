@@ -57,6 +57,19 @@ find client/js -name '*.js' -exec node --check {} \;
 - Shop/NPC logic lives in `server/game/economy/{shop,npc}.ts`; REST in `server/api/{shop,npc}.ts`. Buying requires the character to stand in the shop's city; begging requires money < 20 AND hp < 30% (checked before the 24h `meta.last_beggar_at` cooldown).
 - `GET /api/location/:id` now returns `shopId`/`npcIds`; the shop screen is `client/js/screens/shop.js` (route `'shop'` in main.js), NPC dialog is a modal in `location.js`.
 
+## Stage 8-fix (army tags currency lore)
+- UI currency is «Армейские жетоны» / «Army tags» — i18n values only; `characters.money`, shop API and prices are untouched. `item.old_coin` strings stay as they are (an item, not currency).
+- `army_tag` is a misc ITEM (price 1, tag `currency`), not code-level money. Note: selling it yields `floor(1×0.5) = 0` — kept as spec'd (price 1).
+- Mob loot: `loot.guaranteed` is a SINGLE object, so humans (rust_digger, both bandits, bandit_shooter) carry army_tag as a rare entry with `weight 100` (= always); animals 30–50%, spores 10–20%. `battle.log.loot_army_tag` exists as an i18n key but is not wired into sync.ts (spec: no code changes).
+
+## Stage 9 (progression / weapon skills)
+- `data/level_table.json` is the actual TimeZero-Rebirth table (v2.0) with cumulative `perkPoints` (0..9); `superRefine` enforces `apMax = 15+2×end`, `hpMax = 50+5×end`.
+- `applyLevelUp` REPLACES `perk_points` with `row.perkPoints` (cumulative, not `+=`); `sync.ts` persists it via `updateCharacter`.
+- `characters.perk_points` is added by an explicit migration in `openDb()`; `weapon_skills (character_id, weapon_category, skill, hits)` lives in `schema.sql`. Perk points are display-only until v0.2.
+- `server/game/entities/weapon-skill.ts`: skill +1 per 10 successful player attacks (`hits` counter), clamp 0–100. Spec text also says "max skill = character.level" but its own acceptance tests clamp at 100 — the code follows the tests (cap 100).
+- Engine stays pure: `applyAction` returns `weaponCategoryHit` on a player hit/crit and accepts `weaponSkillBonus` (0–10, additive in `hitChance`); `service.ts` reads the skill from DB, passes the bonus, and calls `incrementWeaponSkill` after a hit. Mob shots never touch skills.
+- `GET /api/character` returns `character` with `perk_points` and `weaponSkills: [{weaponCategory, skill, hits}]` (lazy zeros for pre-stage-9 characters).
+
 ## Repo state
-- This working copy is currently not a git repository (`git status` will fail until `git init`). `.gitignore` exists with only `import/`.
+- This is a git repository (branch `master`, remote `origin` → github.com/ptich9km/time_wastelands). `.gitignore`: `import/`, `node_modules/`, `game.db*`. Commit only when the user explicitly asks; commit messages in English.
 - `import/` holds original-game assets and is ignored; do not add or commit it.

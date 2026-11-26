@@ -32,6 +32,8 @@ export interface HitChanceParams {
   config: HitConfig;
   // Sniper falloff lives in config.distance.sniper of battle.json — passed separately.
   sniperConfig: DistanceConfig['sniper'];
+  // Stage 9: weapon skill accuracy bonus (0..10), additive on the final chance.
+  weaponSkillBonus?: number;
 }
 
 export interface HitChanceResult {
@@ -95,7 +97,7 @@ export function hitChance(params: HitChanceParams): HitChanceResult {
   }
 
   const chance = clamp(
-    100 * baseRatio * zoneMod * distanceMod * positionMod * coverMod,
+    100 * baseRatio * zoneMod * distanceMod * positionMod * coverMod + (params.weaponSkillBonus ?? 0),
     config.clampMin,
     config.clampMax,
   );
@@ -236,6 +238,8 @@ export interface LevelableCharacter {
   hpMax: number;
   apMax: number;
   level: number;
+  // Stage 9: accumulated perk points (replaced from level_table on level up).
+  perkPoints: number;
 }
 
 export function applyLevelUp(params: {
@@ -265,6 +269,8 @@ export function applyLevelUp(params: {
       apMax: row.apMax,
       hp: row.hpMax, // HP is fully restored on level up (MVP)
       level: row.level,
+      // row.perkPoints is the CUMULATIVE total for that level — replace, not +=.
+      perkPoints: row.perkPoints,
     },
     leveled: true,
     oldLevel,

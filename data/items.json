@@ -496,6 +496,19 @@
       "rarity": "uncommon",
       "durability": 1,
       "tags": ["tool", "hi-tech"]
+    },
+    {
+      "id": "army_tag",
+      "type": "misc",
+      "nameKey": "item.army_tag.name",
+      "descriptionKey": "item.army_tag.desc",
+      "icon": "🪖",
+      "price": 2,
+      "weight": 0.02,
+      "requirements": {},
+      "rarity": "common",
+      "durability": 1,
+      "tags": ["currency"]
     }
   ]
 }

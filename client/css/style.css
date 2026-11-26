@@ -1034,3 +1034,6 @@ body {
   font-style: italic;
   margin: 0;
 }
+
+/* Stage 9: secondary note next to perk points. */
+.muted { opacity: 0.7; }

@@ -110,7 +110,10 @@ describe('character API', () => {
 
     const getRes = await get();
     expect(getRes.status).toBe(200);
-    expect((await getRes.json()).character).toEqual(created);
+    // Stage 9: GET additionally carries weaponSkills; the rest matches POST.
+    const { weaponSkills, ...fetched } = (await getRes.json()).character;
+    expect(fetched).toEqual(created);
+    expect(weaponSkills).toHaveLength(5);
   });
 
   it('повторный POST → 409 character_exists', async () => {

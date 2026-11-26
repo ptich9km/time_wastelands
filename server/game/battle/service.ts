@@ -12,6 +12,10 @@ import { getInventory, removeItem } from '../../db/inventory-repo';
 import { getBattle, getSyncStatus, updateBattleState } from '../../db/battle-repo';
 import { markRespawn } from '../../db/world-repo';
 import { applyElite, randInt } from '../world/spawn';
+import { getSkillBonus, getWeaponSkill, incrementWeaponSkill } from '../entities/weapon-skill';
+import type { WeaponCategory } from '../entities/weapon-skill';
+import type { Item } from '../../schemas/items';
+type WeaponItem = Extract<Item, { type: 'weapon' }>;
 import type { Mob } from '../../schemas/mobs';
 import { syncAfterBattle, type BattleRewards } from './sync';
 
@@ -59,6 +63,16 @@ export function processBattleAction(params: ProcessActionParams): ProcessActionR
   }
 
   const engineMobs = mobsForEngine(state, gameData.mobs.mobs);
+  // Stage 9: the player's weapon skill adds 0..10 accuracy (engine stays pure).
+  const playerWeaponId = state.participants.find((p) => p.kind === 'player')?.equipment.weaponId;
+  const playerWeapon = playerWeaponId
+    ? (gameData.items.items.find((i) => i.id === playerWeaponId && i.type === 'weapon') as
+        | WeaponItem
+        | undefined)
+    : undefined;
+  const weaponSkillBonus = playerWeapon
+    ? getSkillBonus(getWeaponSkill(db, playerWeapon.weaponCategory))
+    : 0;
   const result = applyAction({
     state,
     action,
@@ -67,8 +81,14 @@ export function processBattleAction(params: ProcessActionParams): ProcessActionR
     mobs: engineMobs,
     rng,
     lang,
+    weaponSkillBonus,
   });
   if (!result.ok) return result;
+
+  // Stage 9: a successful player shot grows the weapon skill (+1 per 10 hits).
+  if (result.weaponCategoryHit) {
+    incrementWeaponSkill(db, result.weaponCategoryHit as WeaponCategory, 1);
+  }
 
   let finalState = result.newState;
   const logEntries = [...result.logEntries];

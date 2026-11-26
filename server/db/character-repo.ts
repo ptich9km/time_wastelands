@@ -18,6 +18,7 @@ export interface CharacterRow {
   ap_max: number;
   money: number;
   location_id: string;
+  perk_points: number;
   last_rest_at: string | null;
   created_at: string;
   updated_at: string;
@@ -25,7 +26,7 @@ export interface CharacterRow {
 
 const SELECT_SQL = `
   SELECT id, name, level, xp, str, agi, int, "end", per, intel,
-         hp_current, hp_max, ap_max, money, location_id, last_rest_at, created_at, updated_at
+         hp_current, hp_max, ap_max, money, location_id, perk_points, last_rest_at, created_at, updated_at
   FROM characters WHERE id = 1
 `;
 
@@ -72,7 +73,7 @@ export function updateCharacter(
     name: 'name', level: 'level', xp: 'xp', str: 'str', agi: 'agi',
     int: 'int', end: '"end"', per: 'per', intel: 'intel',
     hp_current: 'hp_current', hp_max: 'hp_max', ap_max: 'ap_max',
-    money: 'money', location_id: 'location_id', last_rest_at: 'last_rest_at',
+    money: 'money', location_id: 'location_id', perk_points: 'perk_points', last_rest_at: 'last_rest_at',
   };
   const sets: string[] = [];
   const params: Record<string, unknown> = { id: 1 };

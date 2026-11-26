@@ -20,6 +20,9 @@ export function openDb(dbFile: string): Database.Database {
   if (!characterColumns.has('last_rest_at')) {
     db.exec('ALTER TABLE characters ADD COLUMN last_rest_at TEXT NULL');
   }
+  if (!characterColumns.has('perk_points')) {
+    db.exec('ALTER TABLE characters ADD COLUMN perk_points INTEGER NOT NULL DEFAULT 0');
+  }
 
   const columns = new Set(
     (db.prepare("PRAGMA table_info('battle_sessions')").all() as { name: string }[]).map(

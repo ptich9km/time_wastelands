@@ -50,6 +50,9 @@ export type ActionResult =
       ok: true;
       newState: BattleState;
       logEntries: BattleLogEntry[];
+      // Stage 9: set when the PLAYER lands a hit/crit — the service layer
+      // increments the weapon skill (the engine itself never touches the DB).
+      weaponCategoryHit?: string;
     }
   | {
       ok: false;

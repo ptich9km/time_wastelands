@@ -237,17 +237,17 @@ describe('xp', () => {
 });
 
 describe('applyLevelUp', () => {
-  const base = { str: 3, agi: 3, int: 3, end: 3, per: 0, intel: 0, hp: 40, hpMax: 65, apMax: 21, level: 1 };
+  const base = { str: 3, agi: 3, int: 3, end: 3, per: 0, intel: 0, hp: 40, hpMax: 65, apMax: 21, level: 1, perkPoints: 0 };
 
-  it('level 1 → 2: статы из таблицы, hpMax 75, apMax 25, hp восстановлен', () => {
+  it('level 1 → 2: статы из таблицы, hpMax 70, apMax 23, hp восстановлен', () => {
     const r = applyLevelUp({ character: base, newLevel: 2, levelTable });
     expect(r.leveled).toBe(true);
     expect(r.oldLevel).toBe(1);
     expect(r.character.str).toBe(4);
-    expect(r.character.end).toBe(5);
-    expect(r.character.hpMax).toBe(75);
-    expect(r.character.apMax).toBe(25);
-    expect(r.character.hp).toBe(75); // восстановлен до hpMax
+    expect(r.character.end).toBe(4);
+    expect(r.character.hpMax).toBe(70);
+    expect(r.character.apMax).toBe(23);
+    expect(r.character.hp).toBe(70); // восстановлен до hpMax
   });
 
   it('level 5 → 5: leveled false, статы не меняются', () => {
@@ -257,10 +257,10 @@ describe('applyLevelUp', () => {
     expect(r.character).toBe(char);
   });
 
-  it('level 1 → 5 (прыжок): статы уровня 5, hpMax 120', () => {
+  it('level 1 → 5 (прыжок): статы уровня 5, hpMax 125', () => {
     const r = applyLevelUp({ character: base, newLevel: 5, levelTable });
-    expect(r.character.str).toBe(10);
-    expect(r.character.hpMax).toBe(120);
+    expect(r.character.str).toBe(11);
+    expect(r.character.hpMax).toBe(125);
     expect(r.character.level).toBe(5);
   });
 

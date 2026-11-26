@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS characters (
   ap_max INTEGER NOT NULL,
   money INTEGER NOT NULL DEFAULT 50,
   location_id TEXT NOT NULL,
+  -- Stage 9: accumulated perk points (spent on perks in v0.2).
+  perk_points INTEGER NOT NULL DEFAULT 0,
   -- Stage 06b-fix: last out-of-battle rest timestamp (ISO string).
   last_rest_at TEXT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -93,6 +95,17 @@ CREATE TABLE IF NOT EXISTS shop_state (
   PRIMARY KEY (shop_id, item_id)
 );
 CREATE INDEX IF NOT EXISTS idx_shop_state_shop ON shop_state(shop_id);
+
+-- Stage 9: weapon skills per category. skill grows by 1 per 10 successful
+-- attacks (hits counter); displayed on the character screen.
+CREATE TABLE IF NOT EXISTS weapon_skills (
+  character_id INTEGER NOT NULL DEFAULT 1 CHECK (character_id = 1),
+  weapon_category TEXT NOT NULL CHECK (weapon_category IN ('light','medium','heavy','sniper','melee')),
+  skill INTEGER NOT NULL DEFAULT 0 CHECK (skill >= 0 AND skill <= 100),
+  hits INTEGER NOT NULL DEFAULT 0 CHECK (hits >= 0),
+  PRIMARY KEY (character_id, weapon_category),
+  FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+);
 
 CREATE TABLE IF NOT EXISTS battle_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

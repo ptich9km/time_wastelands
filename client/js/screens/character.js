@@ -22,6 +22,25 @@ function statRow(key, value) {
     </div>`;
 }
 
+// Stage 9: weapon skills (5 categories), display only — no spending buttons.
+function weaponSkillsPanel(skills) {
+  if (!Array.isArray(skills) || skills.length === 0) return '';
+  const rows = skills
+    .map(
+      (s) => `
+      <div class="stat-row">
+        <span class="stat-name">${t(`ui.weapon_category.${s.weaponCategory}`)}</span>
+        <span class="stat-value">${t('ui.character.weapon_skill.row', { category: t(`ui.weapon_category.${s.weaponCategory}`), skill: s.skill, hits: s.hits })}</span>
+      </div>`,
+    )
+    .join('');
+  return `
+    <div class="panel char-weapon-skills">
+      <p class="equip-title">${t('ui.character.weapon_skills')}</p>
+      ${rows}
+    </div>`;
+}
+
 export function renderCharacter(root, character, options = {}) {
   const hpPct = character.hp_max > 0
     ? Math.round((character.hp_current / character.hp_max) * 100)
@@ -38,8 +57,12 @@ export function renderCharacter(root, character, options = {}) {
         <h2 class="char-name">${character.name}</h2>
         <p>${t('ui.character.level', { level: character.level })}</p>
         <p>${t('ui.character.xp', { xp: character.xp, next: xpNext })}</p>
-        <p>${t('ui.character.money', { money: character.money })}</p>
+        <p title="${t('ui.character.money_tooltip')}">🪖 ${t('ui.character.money', { money: character.money })}</p>
         <p>${t('ui.character.location', { name: locationName })}</p>
+        ${character.perk_points > 0
+          ? `<p>${t('ui.character.perk_points', { n: character.perk_points })}
+               <span class="muted">— ${t('ui.character.perk_points_note')}</span></p>`
+          : ''}
       </div>
     </div>
     <div class="panel">
@@ -58,6 +81,7 @@ export function renderCharacter(root, character, options = {}) {
       ${statRow('per', character.per)}
       ${statRow('intel', character.intel)}
     </div>
+    ${weaponSkillsPanel(character.weaponSkills)}
   `;
   if (options.onOpenMap || options.onOpenInventory || options.onTestBattle) {
     const nav = document.createElement('div');

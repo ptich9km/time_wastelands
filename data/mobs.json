@@ -15,7 +15,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "rat_pelt", "weight": 1, "qty": [1, 1] },
-        "rare": [{ "itemId": "medkit", "weight": 1, "qty": [1, 1] }]
+        "rare": [{ "itemId": "medkit", "weight": 1, "qty": [1, 1] }, { "itemId": "army_tag", "weight": 40, "qty": [1, 1] }]
       },
       "spawnLevelRange": [1, 3],
       "tags": ["animal", "rodent", "pack"]
@@ -34,7 +34,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "scrap_metal", "weight": 1, "qty": [1, 1] },
-        "rare": [{ "itemId": "bandage", "weight": 1, "qty": [1, 2] }]
+        "rare": [{ "itemId": "bandage", "weight": 1, "qty": [1, 2] }, { "itemId": "army_tag", "weight": 40, "qty": [1, 1] }]
       },
       "spawnLevelRange": [1, 3],
       "tags": ["animal", "dog", "pack"]
@@ -53,7 +53,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [1, 1] },
-        "rare": [{ "itemId": "spore_antidote", "weight": 1, "qty": [1, 1] }]
+        "rare": [{ "itemId": "spore_antidote", "weight": 1, "qty": [1, 1] }, { "itemId": "army_tag", "weight": 15, "qty": [1, 1] }]
       },
       "spawnLevelRange": [2, 4],
       "tags": ["spore", "humanoid"]
@@ -72,7 +72,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "old_coin", "weight": 1, "qty": [1, 3] },
-        "rare": [{ "itemId": "military_flashlight", "weight": 1, "qty": [1, 1] }]
+        "rare": [{ "itemId": "military_flashlight", "weight": 1, "qty": [1, 1] }, { "itemId": "army_tag", "weight": 100, "qty": [1, 2] }]
       },
       "spawnLevelRange": [2, 4],
       "tags": ["human", "bandit"]
@@ -91,7 +91,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "scrap_metal", "weight": 1, "qty": [1, 2] },
-        "rare": [{ "itemId": "medkit", "weight": 1, "qty": [1, 1] }]
+        "rare": [{ "itemId": "medkit", "weight": 1, "qty": [1, 1] }, { "itemId": "army_tag", "weight": 15, "qty": [1, 1] }]
       },
       "spawnLevelRange": [3, 5],
       "tags": ["spore", "undead"]
@@ -110,7 +110,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "rat_pelt", "weight": 1, "qty": [1, 2] },
-        "rare": [{ "itemId": "stimpack", "weight": 1, "qty": [1, 1] }]
+        "rare": [{ "itemId": "stimpack", "weight": 1, "qty": [1, 1] }, { "itemId": "army_tag", "weight": 40, "qty": [1, 1] }]
       },
       "spawnLevelRange": [3, 5],
       "elite": { "hpMult": 1.5, "dmgMult": 1.3, "xpMult": 2, "rareChanceBonus": 0.15 },
@@ -130,7 +130,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "old_coin", "weight": 1, "qty": [2, 5] },
-        "rare": [{ "itemId": "ammo_light", "weight": 1, "qty": [1, 1] }]
+        "rare": [{ "itemId": "ammo_light", "weight": 1, "qty": [1, 1] }, { "itemId": "army_tag", "weight": 100, "qty": [1, 2] }]
       },
       "spawnLevelRange": [2, 4],
       "tags": ["human", "bandit"]
@@ -149,7 +149,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "scrap_metal", "weight": 1, "qty": [2, 4] },
-        "rare": [{ "itemId": "army_vest", "weight": 1, "qty": [1, 1] }]
+        "rare": [{ "itemId": "army_vest", "weight": 1, "qty": [1, 1] }, { "itemId": "army_tag", "weight": 100, "qty": [1, 2] }]
       },
       "spawnLevelRange": [4, 6],
       "tags": ["human", "bandit", "elite_candidate"]
@@ -170,7 +170,8 @@
         "guaranteed": { "itemId": "old_coin", "weight": 1, "qty": [2, 6] },
         "rare": [
           { "itemId": "ammo_light", "weight": 1, "qty": [1, 2] },
-          { "itemId": "army_pistol", "weight": 1, "qty": [1, 1] }
+          { "itemId": "army_pistol", "weight": 1, "qty": [1, 1] },
+          { "itemId": "army_tag", "weight": 100, "qty": [1, 2] }
         ]
       },
       "spawnLevelRange": [3, 5],
@@ -190,7 +191,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [1, 2] },
-        "rare": [{ "itemId": "spore_antidote", "weight": 1, "qty": [1, 1] }]
+        "rare": [{ "itemId": "spore_antidote", "weight": 1, "qty": [1, 1] }, { "itemId": "army_tag", "weight": 15, "qty": [1, 1] }]
       },
       "spawnLevelRange": [4, 6],
       "tags": ["spore", "humanoid", "ranged"]
@@ -209,7 +210,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [1, 2] },
-        "rare": [{ "itemId": "spore_cloak", "weight": 1, "qty": [1, 1] }]
+        "rare": [{ "itemId": "spore_cloak", "weight": 1, "qty": [1, 1] }, { "itemId": "army_tag", "weight": 15, "qty": [1, 1] }]
       },
       "spawnLevelRange": [4, 6],
       "tags": ["spore", "animal", "elite_candidate"]
@@ -230,7 +231,8 @@
         "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [2, 3] },
         "rare": [
           { "itemId": "stimpack", "weight": 1, "qty": [1, 1] },
-          { "itemId": "military_flashlight", "weight": 1, "qty": [1, 1] }
+          { "itemId": "military_flashlight", "weight": 1, "qty": [1, 1] },
+          { "itemId": "army_tag", "weight": 15, "qty": [1, 1] }
         ]
       },
       "spawnLevelRange": [5, 7],
@@ -252,7 +254,8 @@
         "guaranteed": { "itemId": "scrap_metal", "weight": 1, "qty": [3, 5] },
         "rare": [
           { "itemId": "army_vest", "weight": 1, "qty": [1, 1] },
-          { "itemId": "rusty_carbine", "weight": 1, "qty": [1, 1] }
+          { "itemId": "rusty_carbine", "weight": 1, "qty": [1, 1] },
+          { "itemId": "army_tag", "weight": 15, "qty": [1, 1] }
         ]
       },
       "spawnLevelRange": [6, 8],
@@ -273,7 +276,7 @@
       "xp": 0,
       "loot": {
         "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [1, 1] },
-        "rare": [{ "itemId": "spore_antidote", "weight": 1, "qty": [1, 2] }]
+        "rare": [{ "itemId": "spore_antidote", "weight": 1, "qty": [1, 2] }, { "itemId": "army_tag", "weight": 40, "qty": [1, 1] }]
       },
       "spawnLevelRange": [4, 6],
       "tags": ["spore", "insect"]

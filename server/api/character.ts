@@ -3,6 +3,7 @@
 import type { FastifyInstance } from 'fastify';
 import { createCharacter, getCharacter } from '../game/entities/character';
 import { updateCharacter } from '../db/character-repo';
+import { getAllWeaponSkills } from '../game/entities/weapon-skill';
 
 const REST_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -23,7 +24,8 @@ export async function characterRoutes(app: FastifyInstance): Promise<void> {
     if (!character) {
       return reply.status(404).send({ error: 'no_character' });
     }
-    return { character };
+    // Stage 9: weapon skills ride along with the character payload.
+    return { character: { ...character, weaponSkills: getAllWeaponSkills(app.db) } };
   });
 
   app.post<{ Body: unknown }>('/api/character', async (req, reply) => {

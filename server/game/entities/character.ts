@@ -7,6 +7,7 @@ import {
   type CharacterRow,
 } from '../../db/character-repo';
 import { addItem } from '../../db/inventory-repo';
+import { initWeaponSkills } from './weapon-skill';
 import type { Item } from '../../schemas/items';
 
 export type Character = CharacterRow;
@@ -93,6 +94,8 @@ export function createCharacter(
     if (input.items) {
       grantStarterKit(db, input.items);
     }
+    // Stage 9: 5 weapon skill rows (skill 0, hits 0).
+    initWeaponSkills(db);
     return character;
   });
   return create();

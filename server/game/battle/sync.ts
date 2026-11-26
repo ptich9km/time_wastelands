@@ -131,6 +131,7 @@ export function syncAfterBattle(params: SyncAfterBattleParams): SyncAfterBattleR
         hpMax: current.hp_max,
         apMax: current.ap_max,
         level: current.level,
+        perkPoints: current.perk_points,
       };
       const maxLevel = Math.max(...levelTable.levels.map((l) => l.level));
       while (
@@ -173,6 +174,7 @@ export function syncAfterBattle(params: SyncAfterBattleParams): SyncAfterBattleR
         hp_current: levelable.hp,
         hp_max: levelable.hpMax,
         ap_max: levelable.apMax,
+        perk_points: levelable.perkPoints,
       });
     } else if (state.status === 'defeat') {
       const moneyLost = current.money - Math.floor(current.money * 0.9);

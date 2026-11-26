@@ -1,0 +1,133 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 9 из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — прокачка: авторост по актуальной таблице, навыки оружия, перк-поинты (поле, без использования). ТОЛЬКО ЭТО. Не трогай бой (кроме incrementWeaponSkill), WS, engine, формулы, spawn, экономику.
+
+ЭТАПЫ 1–8 СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log, shop_state).
+- characters: id=1, name, level, xp, str, agi, int, "end", per, intel, hp_current, hp_max, ap_max, money, location_id, last_rest_at.
+- inventory, shop_state, battle_sessions, battle_log.
+- data/level_table.json: уровни 1–10, СТАРАЯ таблица (не совпадает с актуальной TZ). Поля: level, str, agi, int, end, per, intel, apMax, hpMax.
+- server/game/battle/formulas.ts: applyLevelUp(character, newLevel, levelTable) → { character, leveled, oldLevel }.
+- server/game/battle/sync.ts: syncAfterBattle — вызывает applyLevelUp при левелапе, начисляет XP.
+- server/api/{character,world,inventory,battle,shop,npc}.ts.
+- client/js/screens/{character,map,location,inventory,battle-map,battle-result,shop}.js, main.js.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono. min-width 1280px.
+- Все строки — только i18n (snake_case).
+- 300+ тестов зелёные, tsc чистый.
+
+ЗАДАЧА 9 — ТОЛЬКО прокачка.
+
+1. ДАННЫЕ (data/level_table.json — ЗАМЕНИТЬ на актуальную таблицу из TimeZero-Rebirth):
+{
+  "version": "2.0",
+  "levels": [
+    { "level": 1,  "str": 3,  "agi": 3,  "int": 3,  "end": 3,  "per": 0,  "intel": 0,  "perkPoints": 0, "apMax": 21, "hpMax": 65 },
+    { "level": 2,  "str": 4,  "agi": 4,  "int": 4,  "end": 4,  "per": 0,  "intel": 0,  "perkPoints": 1, "apMax": 23, "hpMax": 70 },
+    { "level": 3,  "str": 7,  "agi": 4,  "int": 4,  "end": 9,  "per": 2,  "intel": 0,  "perkPoints": 2, "apMax": 33, "hpMax": 95 },
+    { "level": 4,  "str": 9,  "agi": 4,  "int": 4,  "end": 13, "per": 4,  "intel": 1,  "perkPoints": 3, "apMax": 41, "hpMax": 115 },
+    { "level": 5,  "str": 11, "agi": 5,  "int": 5,  "end": 15, "per": 5,  "intel": 2,  "perkPoints": 4, "apMax": 45, "hpMax": 125 },
+    { "level": 6,  "str": 13, "agi": 6,  "int": 6,  "end": 18, "per": 6,  "intel": 3,  "perkPoints": 5, "apMax": 51, "hpMax": 140 },
+    { "level": 7,  "str": 15, "agi": 8,  "int": 8,  "end": 24, "per": 10, "intel": 5,  "perkPoints": 6, "apMax": 63, "hpMax": 170 },
+    { "level": 8,  "str": 18, "agi": 11, "int": 11, "end": 30, "per": 14, "intel": 10, "perkPoints": 7, "apMax": 75, "hpMax": 200 },
+    { "level": 9,  "str": 25, "agi": 10, "int": 15, "end": 35, "per": 10, "intel": 5,  "perkPoints": 8, "apMax": 85, "hpMax": 225 },
+    { "level": 10, "str": 30, "agi": 12, "int": 18, "end": 42, "per": 12, "intel": 6,  "perkPoints": 9, "apMax": 99, "hpMax": 260 }
+  ]
+}
+ВАЖНО: apMax = 15 + 2 × end, hpMax = 50 + 5 × end. Проверить в superRefine — если не совпадает, ошибка. (Уровень 2: apMax = 15+2×4 = 23, hpMax = 50+5×4 = 70. Уровень 3: 15+2×9 = 33, 50+5×9 = 95. И т.д.)
+Поле perkPoints — новое, добавить в LevelTableSchema.
+
+2. СХЕМА БД (server/db/schema.sql — ALTER TABLE):
+   - ALTER TABLE characters ADD COLUMN perk_points INTEGER NOT NULL DEFAULT 0;
+   - CREATE TABLE IF NOT EXISTS weapon_skills (
+       character_id INTEGER NOT NULL DEFAULT 1 CHECK (character_id = 1),
+       weapon_category TEXT NOT NULL CHECK (weapon_category IN ('light','medium','heavy','sniper','melee')),
+       skill INTEGER NOT NULL DEFAULT 0 CHECK (skill >= 0 AND skill <= 100),
+       PRIMARY KEY (character_id, weapon_category),
+       FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+     );
+   - При создании персонажа (createCharacter) — инициализировать 5 строк в weapon_skills со skill = 0 (или lazy: при первом использовании, если строки нет — создать).
+
+3. НАВЫКИ ОРУЖИЯ (server/game/entities/weapon-skill.ts — новый файл):
+   - getWeaponSkill(db, weaponCategory) → number (0–100), 0 если строки нет.
+   - incrementWeaponSkill(db, weaponCategory, amount=1) → увеличить, clamp 0–100. Вернуть новое значение.
+   - getSkillBonus(skill) → floor(skill / 10) — бонус к точности (0–10).
+   - ВАЖНО: навык растёт на +1 за каждые 10 успешных атак (не за каждую). Реализовать: в characters (или в отдельной таблице weapon_skill_progress) хранить счётчик успешных атак, каждые 10 → skill += 1.
+     * Проще: weapon_skills (character_id, weapon_category, skill, hits) — добавить колонку hits INTEGER DEFAULT 0. При успешной атаке: hits += 1; если hits >= 10 → skill += 1, hits = 0.
+   - max skill = character.level (не 100). При левелапе — ничего не делать (skill не растёт автоматически, только от атак).
+
+4. ОБНОВИТЬ applyLevelUp (formulas.ts):
+   - Использовать актуальную таблицу.
+   - При левелапе:
+     * character.str = row.str, ..., character.intel = row.intel
+     * character.hp_max = row.hpMax, character.ap_max = row.apMax
+     * character.hp_current = hp_max (восстановление)
+     * character.perk_points += row.perkPoints (НАКОПИТЕЛЬНО, не заменять)
+     * character.level = newLevel
+   - ВАЖНО: perkPoints в LevelTable — это «сколько даётся на этом уровне», а не «всего». Уровень 2: +1, уровень 3: +2 (итого 3), уровень 4: +3 (итого 6), и т.д. Проверить по таблице: 1→0, 2→1, 3→2, 4→3, 5→4, 6→5, 7→6, 8→7, 9→8, 10→9. Сумма за все уровни = 45. Но в TZ «с 2 по 11 — по 1 перк-поинту, с 12 — по 2». Наша таблица (0,1,2,3,4,5,6,7,8,9) — это НЕ «+1 за уровень», это «всего на уровне». Уточнить: в TZ «за каждый уровень с 2 по 11 — +1 ПП». То есть level 2 → 1 ПП (всего), level 3 → 2 (всего), ..., level 11 → 10. Наша таблица совпадает с этим (level 10 → 9 ПП). Значит, perkPoints в LevelTable — это «всего ПП на этом уровне», а не «+N за уровень». 
+     * Правильно: при левелапе character.perk_points = row.perkPoints (ЗАМЕНИТЬ, не +=). Потому что row.perkPoints — это накопительное значение.
+     * ВАЖНО: если игрок не тратил ПП, и перешёл с 2 на 3, у него было 1, стало 2 — но 1 он «не потратил». В TZ ПП не тратятся автоматически (их тратит игрок на перки). У нас перков нет — ПП просто копятся. Значит, character.perk_points = row.perkPoints — это правильно (накопительно).
+
+5. ОБНОВИТЬ shoot в engine.ts (incrementWeaponSkill):
+   - После успешного выстрела (hit или crit): incrementWeaponSkill(db, weapon.weaponCategory, 1).
+   - ВАЖНО: engine — чистая функция, не должна лезть в БД. Решение: applyAction возвращает результат с полем weaponSkillIncremented?: { weaponCategory }, а API/WS-слой (service.ts) вызывает incrementWeaponSkill.
+   - Или: передать в applyAction callback onHit?: (weaponCategory) => void, который вызывает service.ts.
+   - Проще: applyAction возвращает { ok: true, newState, logEntries, weaponCategoryHit?: string }, service.ts вызывает incrementWeaponSkill(db, weaponCategoryHit).
+   - ВАЖНО: навык растёт только для игрока (не для мобов).
+
+6. ОБНОВИТЬ hitChance (formulas.ts — ОПЦИОНАЛЬНО, если хочешь сразу):
+   - Добавить параметр weaponSkillBonus (0–10) — прибавить к chance.
+   - В engine.ts: при вызове hitChance передавать getSkillBonus(getWeaponSkill(db, weapon.weaponCategory)).
+   - ВАЖНО: это увеличивает точность на 0–10%, как в TZ. Если не хочешь трогать формулы — оставь на 10. Но тогда навык оружия — «мёртвый код». Рекомендую добавить.
+
+7. РЕСТ API (server/api/character.ts — доработать):
+   - GET /api/character → добавить в ответ поля: perk_points, weaponSkills: [{weaponCategory, skill, hits}].
+   - Перк-поинты не тратятся (v0.2), но отображаются.
+   - НЕ добавлять POST /api/character/perk (это v0.2).
+
+8. КЛИЕНТ (client/js/screens/character.js — доработать):
+   - Показать perk_points (если > 0): «Очки перков: N (пока не используются)».
+   - Показать навыки оружия: таблица 5 категорий (light/medium/heavy/sniper/melee), skill 0–100, hits 0–9 (до следующего +1).
+   - Никаких кнопок «потратить» (v0.2).
+
+9. i18n — новые ключи (RU + EN):
+   - ui.character.perk_points («Очки перков: {n}»)
+   - ui.character.weapon_skills («Навыки оружия»)
+   - ui.character.weapon_skill.row ({category}, {skill}, {hits})
+   - ui.weapon_category.light, .medium, .heavy, .sniper, .melee
+   - ui.character.levelup («Новый уровень: {level}!»)
+   - ui.character.perk_points_note («Пока не используются — появятся в v0.2»)
+
+10. ТЕСТЫ (Vitest, минимум 15):
+   - level_table: apMax = 15+2×end, hpMax = 50+5×end для всех уровней.
+   - applyLevelUp: level 1 → 2, статы 4/4/4/4/0/0, hpMax 70, apMax 23, perk_points = 1.
+   - applyLevelUp: level 2 → 3, статы 7/4/4/9/2/0, hpMax 95, apMax 33, perk_points = 2 (заменить, не +=).
+   - applyLevelUp: level 1 → 5 (прыжок), статы из уровня 5, perk_points = 4.
+   - applyLevelUp: level 5 → 5, leveled false, статы не меняются.
+   - incrementWeaponSkill: skill 0, hits 0 → после 1 успеха hits 1; после 10 — skill 1, hits 0.
+   - incrementWeaponSkill: skill 100, hits 0 → +1 успех → skill 100 (clamp), hits 1.
+   - getSkillBonus: skill 0 → 0; skill 10 → 1; skill 100 → 10.
+   - getSkillBonus: skill 55 → 5.
+   - POST /api/battle/:id/action shoot (успех) → weapon_skills.hits += 1.
+   - POST /api/battle/:id/action shoot (промах) → hits не меняется.
+   - GET /api/character → perk_points, weaponSkills.
+   - createCharacter → weapon_skills инициализированы (5 строк, skill 0, hits 0).
+   - crossValidate: level_table покрывает 1..10, apMax/hpMax соответствуют формулам.
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ трогай бой (applyAction — только добавить возврат weaponCategoryHit), WS, engine (кроме shoot), spawn, экономику.
+- НЕ добавляй таблиц, кроме weapon_skills.
+- НЕ меняй characters (только ADD COLUMN perk_points).
+- НЕ хардкодь строки — только i18n.
+- НЕ реализуй перки, распределение ПП, профессии, крафт — v0.2.
+
+КРИТЕРИЙ ПРИЁМКИ 9:
+1. npm run dev — сервер стартует, миграция perk_points и weapon_skills.
+2. Создать персонажа → weapon_skills: 5 строк, skill 0, hits 0.
+3. Убить моба → XP, левелап → статы из новой таблицы (уровень 2: 4/4/4/4/0/0, hpMax 70, apMax 23, perk_points 1).
+4. Персонаж 3 уровня → статы 7/4/4/9/2/0, perk_points 2.
+5. Сделать 10 успешных выстрелов из пистолета → weapon_skills.light.skill = 1.
+6. Промах не увеличивает hits.
+7. Экран персонажа: perk_points, навыки оружия (5 строк).
+8. npm test — все зелёные (минимум 15 новых).
+9. tsc --noEmit чисто.
+10. Этапы 1–8 не сломаны.
+
+Начни с data/level_table.json (актуальная таблица) и server/game/entities/weapon-skill.ts.
