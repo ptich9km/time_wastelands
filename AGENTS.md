@@ -70,6 +70,16 @@ find client/js -name '*.js' -exec node --check {} \;
 - Engine stays pure: `applyAction` returns `weaponCategoryHit` on a player hit/crit and accepts `weaponSkillBonus` (0–10, additive in `hitChance`); `service.ts` reads the skill from DB, passes the bonus, and calls `incrementWeaponSkill` after a hit. Mob shots never touch skills.
 - `GET /api/character` returns `character` with `perk_points` and `weaponSkills: [{weaponCategory, skill, hits}]` (lazy zeros for pre-stage-9 characters).
 
+## Stage 10a (balance)
+- `battle.json`: `per.rangeBonusPerPoint = 10` (effectiveRange used by both hit curve and sniper plateau), `armor.diminishingAfter = 50` / `diminishingFactor = 0.5` (80 → 65), `healLimit.startMult = 1.2`.
+- `buildBattleState` takes an optional final `BattleConfig` arg; production routes pass `app.gameData.battleConfig`, tests without it load config from `data/`. Heal cap is `floor(hpMax × startMult)`, regen `floor(hpMax × regenPerRoundMult)`.
+- `server/scripts/sim.ts` is now a full engine simulation (`applyAction` + `runEnemyTurn`, move/shoot/endTurn) with 1000 fights per scenario by default; `SIM_BATTLES` overrides. Observed (1000 fights): 1v1 100%, 1v3 100%, hulk 0.1%; warnings only — no data tuning allowed by spec.
+
+## Stage 10b (polish)
+- README.md is the final version (fan-made disclaimer, 3-command launch, stage-10 balance notes).
+- `sync.ts` logs `battle.log.loot_army_tag` (with `{mob}`) when `army_tag` is actually in rewards; key exists in both RU/EN dictionaries.
+- `spec-10b.txt` is truncated mid-sentence after "3 команды до игры:" — implemented the remaining listed tasks from its title/README context; no literal 30-minute manual session was possible, replaced by HTTP smoke + full test suite.
+
 ## Repo state
 - This is a git repository (branch `master`, remote `origin` → github.com/ptich9km/time_wastelands). `.gitignore`: `import/`, `node_modules/`, `game.db*`. Commit only when the user explicitly asks; commit messages in English.
 - `import/` holds original-game assets and is ignored; do not add or commit it.

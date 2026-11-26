@@ -1,0 +1,24 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 10b из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — финальная полировка: README, 30-минутный прогон, подключение battle.log.loot_army_tag, проверка тултипов/цветов/производительности, финальный коммит. ТОЛЬКО ЭТО. Не трогай баланс (10a уже сделан), не трогай ассеты (9.5 отменён).
+
+ЭТАПЫ 1–9 И 10a СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log, shop_state, weapon_skills).
+- data/config/battle.json: hit, damage, armor (с diminishingAfter 50, diminishingFactor 0.5), penetration, distance, xp, healLimit (startMult 1.2), apCosts, ai, spawn, per (rangeBonusPerPoint 10).
+- data/level_table.json: 1–10, актуальная таблица v2.0 с perkPoints.
+- data/items.json: 29+ предметов, army_tag (price 2, тег currency), оружие с range/spread/sniper/pen/apCost/level, броня с level/armor.
+- data/mobs.json: 14 мобов, army_tag в луте (животные rare 40%, споровые rare 15%, люди rare 100%).
+- data/shops.json, data/npcs.json (Коваль, Вера, Молчун).
+- server/game/battle/formulas.ts: hitChance (с per→effectiveRange, weaponSkillBonus), armorAbsorb (с убывающей отдачей), healLimit 1.2×.
+- server/game/battle/sync.ts: defeat → hp 1, money × 0.9, город. battle.log.loot_army_tag — ключ есть, НЕ подключён.
+- server/scripts/sim.ts: симуляция 10 000 боёв.
+- client/js/screens/{character,map,location,inventory,battle-map,battle-result,shop}.js, main.js, api.js, audio.js, i18n.js.
+- client/css/{style.css, battle.css}.
+- data/i18n/ru.json и en.json (491/491).
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono. min-width 1280px. Только десктоп.
+- 363+ тестов зелёные, tsc чистый.
+
+ЗАДАЧА 10b — ТОЛЬКО полировка.
+
+1. README.md — ПОЛНОСТЬЮ ПЕРЕПИСАТЬ (сейчас там заметки по этапам, нужен финальный):
+   - Заголовок: «Пустошь: Ржавый Предел» — локальная браузерная RPG по мотивам TimeZero.
+   - Пометка: fan-made, не аффилировано с TimeZero / TimeZero-Rebirth. Не для публикации/монетизации.
+   - 3 команды до игры:

@@ -153,6 +153,20 @@ export function syncAfterBattle(params: SyncAfterBattleParams): SyncAfterBattleR
       if (rewards.levelUp) rewards.newLevel = levelable.level;
 
       rewards.loot = collectLoot(state, mobs, rng);
+      // Stage 10b: the lore line is logged only when a tag actually dropped.
+      if (rewards.loot.some((reward) => reward.itemId === 'army_tag')) {
+        const carrier = state.participants
+          .filter((p) => p.kind === 'mob' && p.hp <= 0)
+          .map((p) => mobs.find((m) => m.id === p.refId))
+          .find(
+            (m) =>
+              m?.loot.guaranteed?.itemId === 'army_tag' ||
+              m?.loot.rare.some((r) => r.itemId === 'army_tag'),
+          );
+        if (carrier) {
+          log(t('battle.log.loot_army_tag', lang, { mob: t(carrier.nameKey, lang) }));
+        }
+      }
       if (rewards.loot.length > 0) {
         const names = rewards.loot
           .map((reward) => `${reward.itemId} ×${reward.qty}`)

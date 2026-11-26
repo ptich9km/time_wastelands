@@ -1,12 +1,15 @@
 // Stage 5a: builds the initial BattleState. No formulas, no actions.
 
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import type Database from 'better-sqlite3';
 import type { Character } from '../entities/character';
 import { getEquipped } from '../../db/inventory-repo';
 import type { Mob } from '../../schemas/mobs';
 import type { WorldFile } from '../../schemas/world';
 import type { Item } from '../../schemas/items';
+import type { BattleConfig } from '../../schemas/battle_config';
+import { loadGameData } from '../../schemas/loader';
 import type { Equipment, Obstacle, Participant, BattleState, HexCoord, BattleLogEntry } from './state';
 import { applyElite } from '../world/spawn';
 import { t, type Lang } from '../../i18n';
@@ -76,6 +79,7 @@ export function buildBattleState(
   lang: Lang,
   items: Item[] = [],
   isElite: boolean[] = [],
+  battleConfig?: BattleConfig,
 ): BattleState {
   const spawns = [PLAYER_SPAWN, ...MOB_SPAWNS.slice(0, mobs.length)];
   const now = new Date().toISOString();
@@ -135,7 +139,9 @@ export function buildBattleState(
     };
   });
 
-  const healMax = Math.floor(character.hp_max * 1.5);
+  // Stage 10a: the healing cap now comes from battle.json (1.2× by default).
+  const healConfig = (battleConfig ?? loadGameData(path.resolve('data')).battleConfig).healLimit;
+  const healMax = Math.floor(character.hp_max * healConfig.startMult);
   const target = t(mobs[0].nameKey, lang);
 
   const log: BattleLogEntry[] = [
@@ -176,7 +182,7 @@ export function buildBattleState(
     healLimit: {
       current: healMax,
       max: healMax,
-      regenPerRound: Math.floor(character.hp_max * 0.2),
+      regenPerRound: Math.floor(character.hp_max * healConfig.regenPerRoundMult),
     },
     createdAt: now,
     updatedAt: now,

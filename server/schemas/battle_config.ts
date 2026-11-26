@@ -28,6 +28,11 @@ export const HitConfigSchema = z.object({
   pointBlankHexes: z.number().min(0),
 }).refine((c) => c.clampMin <= c.clampMax, 'hit.clampMin <= hit.clampMax');
 
+// Stage 10a: every 10 PER points add one hex of effective weapon range.
+export const PerConfigSchema = z.object({
+  rangeBonusPerPoint: z.number().int().positive(),
+});
+
 export const DamageConfigSchema = z.object({
   critChanceBase: z.number().min(0).max(100),
   critChancePerIntel: z.number().min(0),
@@ -46,7 +51,10 @@ export const ArmorConfigSchema = z.object({
     mult50: z.number().positive(),
   }),
   maxAbsorb: z.number().min(0).max(100),
-});
+  // Stage 10a: linear diminishing returns above `diminishingAfter` percent.
+  diminishingAfter: z.number().min(0).max(100),
+  diminishingFactor: z.number().min(0).max(1),
+}).refine((c) => c.diminishingAfter <= c.maxAbsorb, 'armor.diminishingAfter <= maxAbsorb');
 
 export const PenetrationConfigSchema = z.object({
   fullDamageBelow: z.number().min(0).max(100),
@@ -130,6 +138,7 @@ export const SpawnConfigSchema = z.object({
 
 export const BattleConfigSchema = z.object({
   hit: HitConfigSchema,
+  per: PerConfigSchema,
   damage: DamageConfigSchema,
   armor: ArmorConfigSchema,
   penetration: PenetrationConfigSchema,
@@ -142,6 +151,7 @@ export const BattleConfigSchema = z.object({
 });
 
 export type HitConfig = z.infer<typeof HitConfigSchema>;
+export type PerConfig = z.infer<typeof PerConfigSchema>;
 export type DamageConfig = z.infer<typeof DamageConfigSchema>;
 export type ArmorConfig = z.infer<typeof ArmorConfigSchema>;
 export type PenetrationConfig = z.infer<typeof PenetrationConfigSchema>;

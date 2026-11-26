@@ -63,6 +63,7 @@ export async function battleRoutes(app: FastifyInstance): Promise<void> {
         lang,
         app.gameData.items.items,
         isElite,
+        app.gameData.battleConfig,
       );
       createBattle(app.db, state);
       return reply.status(201).send({ battleId: state.id, state });

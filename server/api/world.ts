@@ -140,6 +140,7 @@ export async function worldRoutes(app: FastifyInstance): Promise<void> {
         lang,
         app.gameData.items.items,
         roll.isElite,
+        app.gameData.battleConfig,
       );
       createBattle(app.db, battle);
       const updated = updateCharacter(app.db, { id: 1, location_id: targetId });

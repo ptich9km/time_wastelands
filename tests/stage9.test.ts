@@ -173,6 +173,7 @@ describe('hitChance с бонусом навыка', () => {
     positionTarget: 'stand' as const,
     coverTarget: false,
     config: cfg.hit,
+    perConfig: cfg.per,
     sniperConfig: cfg.distance.sniper,
   };
 

@@ -4,6 +4,7 @@
 import type { Position } from './state';
 import type {
   HitConfig,
+  PerConfig,
   DamageConfig,
   ArmorConfig,
   PenetrationConfig,
@@ -30,6 +31,8 @@ export interface HitChanceParams {
   positionTarget: Position;
   coverTarget: boolean;
   config: HitConfig;
+  // Stage 10a: PER extends the effective range used by the distance modifier.
+  perConfig: PerConfig;
   // Sniper falloff lives in config.distance.sniper of battle.json — passed separately.
   sniperConfig: DistanceConfig['sniper'];
   // Stage 9: weapon skill accuracy bonus (0..10), additive on the final chance.
@@ -38,6 +41,7 @@ export interface HitChanceParams {
 
 export interface HitChanceResult {
   chance: number;
+  effectiveRange: number;
   distanceMod: number;
   zoneMod: number;
   positionMod: number;
@@ -49,16 +53,20 @@ export function hitChance(params: HitChanceParams): HitChanceResult {
   const { config, weapon } = params;
   const pointBlank = params.distanceHexes <= config.pointBlankHexes;
 
+  // Stage 10a: PER lengthens the range curve for both mobs and the player.
+  const effectiveRange =
+    weapon.range + Math.floor(params.perAttacker / params.perConfig.rangeBonusPerPoint);
+
   // Linear distance modifier:
-  //  - normal weapon: 1.0 at 1 hex → spread/100 at `range` hexes, plateau beyond.
-  //  - sniper: `sniper.pointBlank` at 1 hex → spread/100 at `sniper.plateauAt` × range, plateau.
+  //  - normal weapon: 1.0 at 1 hex → spread/100 at `effectiveRange` hexes, plateau beyond.
+  //  - sniper: `sniper.pointBlank` at 1 hex → spread/100 at `sniper.plateauAt` × effectiveRange.
   //  - distance 0 (same hex) → 1.0.
   const minMod = weapon.spread / 100;
   let distanceMod: number;
   if (params.distanceHexes <= 0) {
     distanceMod = 1.0;
   } else if (weapon.sniper) {
-    const plateau = params.sniperConfig.plateauAt * weapon.range;
+    const plateau = params.sniperConfig.plateauAt * effectiveRange;
     if (params.distanceHexes <= 1) {
       distanceMod = params.sniperConfig.pointBlank;
     } else if (params.distanceHexes >= plateau) {
@@ -71,10 +79,11 @@ export function hitChance(params: HitChanceParams): HitChanceResult {
     }
   } else if (params.distanceHexes <= 1) {
     distanceMod = 1.0;
-  } else if (params.distanceHexes >= weapon.range) {
+  } else if (params.distanceHexes >= effectiveRange) {
     distanceMod = minMod;
   } else {
-    distanceMod = 1.0 + (minMod - 1.0) * ((params.distanceHexes - 1) / (weapon.range - 1));
+    distanceMod =
+      1.0 + (minMod - 1.0) * ((params.distanceHexes - 1) / (effectiveRange - 1));
   }
 
   const baseRatio = params.perAttacker / Math.max(params.agiTarget, 1);
@@ -93,7 +102,7 @@ export function hitChance(params: HitChanceParams): HitChanceResult {
     (params.positionTarget === 'stand' || params.positionTarget === 'crouch')
   ) {
     // Guaranteed hit in melee comfort — clamp does not apply.
-    return { chance: 100, distanceMod, zoneMod, positionMod, coverMod, pointBlank };
+    return { chance: 100, effectiveRange, distanceMod, zoneMod, positionMod, coverMod, pointBlank };
   }
 
   const chance = clamp(
@@ -101,7 +110,7 @@ export function hitChance(params: HitChanceParams): HitChanceResult {
     config.clampMin,
     config.clampMax,
   );
-  return { chance, distanceMod, zoneMod, positionMod, coverMod, pointBlank };
+  return { chance, effectiveRange, distanceMod, zoneMod, positionMod, coverMod, pointBlank };
 }
 
 // --- Damage ---
@@ -145,6 +154,13 @@ export function armorAbsorb(params: {
     const denom = config.formulaAbove6.coef * params.weaponLevel - config.formulaAbove6.offset;
     // Zero/negative denominator: the armor is effectively "infinite" at this weapon level.
     absorb = denom <= 0 ? config.maxAbsorb : (params.armorValue * config.formulaAbove6.mult50) / denom;
+  }
+  absorb = clamp(absorb, 0, config.maxAbsorb);
+  // Stage 10a: linear diminishing returns above the 50% threshold, e.g. 80 → 65.
+  if (absorb > config.diminishingAfter) {
+    absorb =
+      config.diminishingAfter +
+      (absorb - config.diminishingAfter) * config.diminishingFactor;
   }
   return clamp(absorb, 0, config.maxAbsorb);
 }

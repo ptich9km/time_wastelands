@@ -1,0 +1,102 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 10a из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — баланс: PER→дальность, броня после 50%, лимит лечения 1.2×, проверка смерти игрока. ТОЛЬКО ЭТО. Не трогай UI, README, ассеты.
+
+ЭТАПЫ 1–9 СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log, shop_state, weapon_skills).
+- data/config/battle.json: hit (clampMin/Max, zoneMods, positionMods, coverBonus, pointBlankHexes), damage, armor (formulaAbove6, formulaUpTo6, maxAbsorb), penetration, distance, xp, healLimit (startMult 1.5, regenPerRoundMult 0.2), apCosts, ai, spawn.
+- server/game/battle/formulas.ts: hitChance, rollDamage, rollCrit, applyCrit, armorAbsorb, damageAfterArmor, rollPenetration, damageWithPenetration, damageOutsideRange, xpForKill, xpToNextLevel, applyLevelUp.
+- server/game/battle/engine.ts: applyAction (move/shoot/stance/reload/useItem/flee/endTurn/aim), runEnemyTurn. В hitChance передаётся weaponSkillBonus (0–10).
+- server/game/battle/sync.ts: syncAfterBattle — defeat → hp 1, money × 0.9, город.
+- data/level_table.json: 1–10, актуальная таблица v2.0 с perkPoints.
+- data/items.json: оружие с range, spread, sniper, pen, apCost, level; броня с level, armor {head,torso,arms,legs}.
+- data/mobs.json: 14 мобов, stats {str,agi,int,end,per,intel}, attack {min,max,pen,range}.
+- server/scripts/sim.ts: симуляция 10 000 боёв.
+- 363 теста зелёные, tsc чистый.
+
+ЗАДАЧА 10a — ТОЛЬКО баланс.
+
+1. PER → дальность (data/config/battle.json — добавить секцию "per"):
+{
+  "per": {
+    "rangeBonusPerPoint": 10   // каждые 10 PER = +1 гекс к дальности
+  }
+}
+В hitChance (formulas.ts):
+  - Добавить параметр perAttacker (уже есть), weapon, config.
+  - effectiveRange = weapon.range + floor(perAttacker / config.per.rangeBonusPerPoint).
+  - Использовать effectiveRange вместо weapon.range в distanceMod.
+  - ВАЖНО: sniper-кривая тоже использует effectiveRange (плато на 0.7 × effectiveRange).
+  - В engine.ts при вызове hitChance передавать perAttacker из participant.stats.per (уже передаётся).
+  - ВАЖНО: для мобов per тоже работает (у них есть per). Это честно.
+
+2. Броня после 50% — убывающая отдача (data/config/battle.json — обновить "armor"):
+{
+  "armor": {
+    "formulaAbove6": { "mult50": 50, "coef": 20, "offset": 80 },
+    "formulaUpTo6": { "cap": 80, "mult50": 50 },
+    "maxAbsorb": 80,
+    "diminishingAfter": 50,        // после 50% — убывающая отдача
+    "diminishingFactor": 0.5       // k = 0.5: absorb = 50 + (base - 50) * 0.5
+  }
+}
+В armorAbsorb (formulas.ts):
+  - Сначала вычислить base_absorb по текущей формуле (до 80).
+  - Если base_absorb <= diminishingAfter (50) → вернуть base_absorb.
+  - Иначе → return diminishingAfter + (base_absorb - diminishingAfter) × diminishingFactor.
+  - Clamp 0..maxAbsorb.
+  - ПРИМЕР: base = 80 → 50 + (80-50)×0.5 = 65. Было 80, стало 65. Слабее.
+  - ПРИМЕР: base = 50 → 50. Без изменений.
+  - ПРИМЕР: base = 30 → 30. Без изменений.
+  - ВАЖНО: формула из вики «после 50% — гипербола», но мы делаем линейную убывающую отдачу — проще, тестируется, даёт контроль. Если хочешь точную гиперболу — сложнее, не рекомендую для MVP.
+
+3. Лимит лечения 1.2× (data/config/battle.json — обновить "healLimit"):
+{
+  "healLimit": {
+    "startMult": 1.2,              // было 1.5
+    "regenPerRoundMult": 0.2
+  }
+}
+В 5a (buildBattleState) healLimit.current = floor(hpMax × 1.2), max = floor(hpMax × 1.2). Уже читает из конфига — просто поменять число.
+
+4. Смерть игрока — проверить (sync.ts):
+  - defeat → hp_current = 1, money = floor(money × 0.9), location_id = world.startLocationId.
+  - Уже есть в 6a. Проверить тестом, что после defeat деньги уменьшились, город — стартовый.
+
+5. Симуляция (server/scripts/sim.ts — доработать):
+  - Добавить сценарий «1 ур. vs 1 pipe_rat» с учётом новых формул (PER→дальность, броня после 50%, лимит 1.2×).
+  - Добавить сценарий «1 ур. vs 3 pipe_rat» (стая).
+  - Добавить сценарий «1 ур. vs rust_hulk» (6 ур.).
+  - Вывести winrate, среднюю длину боя.
+  - ЦЕЛЬ: 1v1 = 70–85%, 1v3 = 20–50%, 1 vs rust_hulk <= 20%, средняя длина <= 6 раундов.
+  - Если вне диапазона — предупреждение (не падать).
+  - ВАЖНО: симуляция должна учитывать ОД (не просто «чередование ударов», а полноценный цикл хода с move/shoot/endTurn). Использовать applyAction + runEnemyTurn.
+  - Если это сложно — упрощённая симуляция (без карты, только формулы) допустима, но тогда указать в выводе «упрощённая».
+
+6. Тесты (Vitest, минимум 10):
+  - hitChance: per 0 → effectiveRange = weapon.range; per 20 → +2 гекса.
+  - hitChance: sniper, per 20, range 10 → плато на 0.7 × 12 = 8.4 гекса.
+  - armorAbsorb: base 80 → 65 (после убывающей отдачи).
+  - armorAbsorb: base 50 → 50 (без изменений).
+  - armorAbsorb: base 30 → 30 (без изменений).
+  - armorAbsorb: base 100 → 75 (clamp 80 → 65 после отдачи).
+  - healLimit: startMult 1.2 → hpMax 65 → 78 (было 97).
+  - syncAfterBattle defeat: hp 1, money × 0.9, город.
+  - sim: winrate 1v1 в диапазоне (или предупреждение).
+  - Конфиг: per.rangeBonusPerPoint = 10, armor.diminishingAfter = 50, healLimit.startMult = 1.2.
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ трогай UI, README, ассеты.
+- НЕ добавляй таблиц, полей в БД.
+- НЕ меняй data/level_table.json, data/items.json, data/mobs.json.
+- НЕ хардкодь строки — только i18n (но в 10a UI не меняется).
+
+КРИТЕРИЙ ПРИЁМКИ 10a:
+1. npm run dev — сервер стартует.
+2. hitChance: per 20 → effectiveRange +2 (проверить тестом).
+3. armorAbsorb(80) → 65 (было 80).
+4. healLimit при HP 65 → 78 (было 97).
+5. npm run sim — winrate 1v1 70–85%, 1v3 20–50%, 1 vs rust_hulk <= 20%, средняя длина <= 6.
+6. npm test — все зелёные (минимум 10 новых).
+7. tsc --noEmit чисто.
+8. Этапы 1–9 не сломаны.
+
+Начни с data/config/battle.json (секции per, armor, healLimit) и formulas.ts (hitChance, armorAbsorb).

@@ -37,6 +37,7 @@ function hit(overrides: Partial<Parameters<typeof hitChance>[0]> = {}) {
     positionTarget: 'stand',
     coverTarget: false,
     config: cfg.hit,
+    perConfig: cfg.per,
     sniperConfig: cfg.distance.sniper,
     ...overrides,
   });
@@ -61,11 +62,11 @@ describe('hitChance', () => {
 
   it('per=10, agi=20 (ratio 0.5), голова (0.6) → 30', () => {
     const r = hit({ perAttacker: 10, agiTarget: 20, zone: 'head', coverTarget: true, distanceHexes: 3, weapon: RNG_GUN });
-    // ratio 0.5 < 1 → zoneMod 0.6; distance 3 при range 5, spread 20: 1 + (0.2-1)*(2/4) = 0.6
-    // 100 × 0.5 × 0.6 × 0.6 × 1 × 0.7 = 12.6 → clamp... нет, выше clampMin=5 → 12.6
+    // Stage 10a: per 10 → effectiveRange = 5 + 1 = 6; distance 3, spread 20:
+    // 1 + (0.2-1)*(2/5) = 0.68 → 100 × 0.5 × 0.6 × 0.68 × 0.7 = 14.28
     expect(r.zoneMod).toBe(0.6);
-    expect(r.distanceMod).toBeCloseTo(0.6);
-    expect(r.chance).toBeCloseTo(12.6);
+    expect(r.distanceMod).toBeCloseTo(0.68);
+    expect(r.chance).toBeCloseTo(14.28);
   });
 
   it('чистый пример спеки: per=10 agi=20 голова, distance 1 → 30', () => {
@@ -146,16 +147,16 @@ describe('armorAbsorb', () => {
     expect(armorAbsorb({ armorValue: 80, weaponLevel: 5, config: cfg.armor })).toBe(50);
   });
 
-  it('armor 200, weapon 12 → 62.5', () => {
-    expect(armorAbsorb({ armorValue: 200, weaponLevel: 12, config: cfg.armor })).toBeCloseTo(62.5);
+  it('armor 200, weapon 12 → 62.5 × diminishing → 56.25', () => {
+    expect(armorAbsorb({ armorValue: 200, weaponLevel: 12, config: cfg.armor })).toBeCloseTo(56.25);
   });
 
-  it('armor 1000, weapon 12 → 80 (clamp maxAbsorb)', () => {
-    expect(armorAbsorb({ armorValue: 1000, weaponLevel: 12, config: cfg.armor })).toBe(80);
+  it('armor 1000, weapon 12 → clamp 80 × diminishing → 65', () => {
+    expect(armorAbsorb({ armorValue: 1000, weaponLevel: 12, config: cfg.armor })).toBe(65);
   });
 
-  it('знаменатель ≤ 0 → maxAbsorb (защита «бесконечна»)', () => {
-    expect(armorAbsorb({ armorValue: 10, weaponLevel: 7, config: { ...cfg.armor, formulaAbove6: { mult50: 50, coef: 1, offset: 100 } } })).toBe(80);
+  it('знаменатель ≤ 0 → maxAbsorb → diminishing → 65', () => {
+    expect(armorAbsorb({ armorValue: 10, weaponLevel: 7, config: { ...cfg.armor, formulaAbove6: { mult50: 50, coef: 1, offset: 100 } } })).toBe(65);
   });
 });
 

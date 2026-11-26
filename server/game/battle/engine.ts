@@ -107,6 +107,7 @@ export function shootChance(params: {
     positionTarget: target.position,
     coverTarget: target.position === 'cover',
     config: config.hit,
+    perConfig: config.per,
     sniperConfig: config.distance.sniper,
     weaponSkillBonus: params.weaponSkillBonus,
   });
@@ -505,6 +506,7 @@ export function runEnemyTurn(params: {
           positionTarget: player.position,
           coverTarget: player.position === 'cover',
           config: config.hit,
+          perConfig: config.per,
           sniperConfig: config.distance.sniper,
         });
 

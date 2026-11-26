@@ -198,7 +198,7 @@ describe('battle API', () => {
     expect(state.map.obstacles.length).toBeGreaterThanOrEqual(3);
     expect(state.map.obstacles.length).toBeLessThanOrEqual(4);
     expect(state.participants).toHaveLength(2);
-    expect(state.healLimit.max).toBe(Math.floor(state.participants[0].hpMax * 1.5));
+    expect(state.healLimit.max).toBe(Math.floor(state.participants[0].hpMax * 1.2));
     expect(state.turnOrder).toEqual(['player', 'mob_1']);
     expect(state.currentActorId).toBe('player');
     expect(state.log).toHaveLength(1);

@@ -13,6 +13,9 @@
     "coverBonus": -30,
     "pointBlankHexes": 1
   },
+  "per": {
+    "rangeBonusPerPoint": 10
+  },
   "damage": {
     "critChanceBase": 5,
     "critChancePerIntel": 0.5,
@@ -22,7 +25,9 @@
   "armor": {
     "formulaAbove6": { "mult50": 50, "coef": 20, "offset": 80 },
     "formulaUpTo6": { "cap": 80, "mult50": 50 },
-    "maxAbsorb": 80
+    "maxAbsorb": 80,
+    "diminishingAfter": 50,
+    "diminishingFactor": 0.5
   },
   "penetration": {
     "fullDamageBelow": 40,
@@ -42,7 +47,7 @@
     "levelDiffClampMax": 5.0
   },
   "healLimit": {
-    "startMult": 1.5,
+    "startMult": 1.2,
     "regenPerRoundMult": 0.2
   },
   "apCosts": {
