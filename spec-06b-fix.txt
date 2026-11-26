@@ -1,0 +1,89 @@
+Ты — senior full-stack разработчик. Добавь лечение вне боя в игру «Пустошь: Ржавый Предел». Это пропущенная фича из ТЗ (раздел 3.3 «Отдохнуть»). Только сервер + клиент, без боя.
+
+ЭТАПЫ 1–6b СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log).
+- characters: id=1, hp_current, hp_max, money, location_id.
+- inventory: item_id, qty, equipped_slot.
+- server/api/{character,world,inventory,battle}.ts.
+- client/js/screens/location.js — экран локации: название, тип, описание, атмосферные фразы, связи, кнопки «Карта мира», «Персонаж».
+- client/js/main.js — роутинг character|map|location|inventory|battle-map.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono.
+- Все строки — только i18n (snake_case).
+
+ЗАДАЧА — лечение вне боя:
+1. «Отдохнуть» — в любом городе (type: 'city'): +30% HP_max за 0 гильз, кулдаун 5 минут реального времени (хранить в meta или в characters.last_rest_at).
+2. «Госпиталь» — в любом городе: полное HP за деньги (цена = (hp_max - hp_current) × 1 гильза, минимум 5). Если денег не хватает — ошибка.
+3. «Аптечка» — использовать consumable вне боя: +heal из item.effect.heal, списать 1 шт из инвентаря.
+
+СЕРВЕР:
+1. Схема БД (server/db/schema.sql): ALTER TABLE characters ADD COLUMN last_rest_at TEXT NULL;
+2. server/api/character.ts — добавить эндпоинты:
+   - POST /api/character/rest → 
+     * 400 { error: 'not_in_city' }, если location_id не город (type !== 'city' в world.json).
+     * 400 { error: 'rest_cooldown', remainingSec }, если last_rest_at < 5 минут назад.
+     * 400 { error: 'full_hp' }, если hp_current === hp_max.
+     * Восстановить hp_current = min(hp_max, hp_current + floor(hp_max × 0.3)).
+     * last_rest_at = now.
+     * 200 { character }.
+   - POST /api/character/heal → 
+     * 400 { error: 'not_in_city' }, если не город.
+     * 400 { error: 'full_hp' }, если hp_current === hp_max.
+     * cost = max(5, (hp_max - hp_current) × 1).
+     * 400 { error: 'not_enough_money', cost, have }, если money < cost.
+     * money -= cost, hp_current = hp_max.
+     * 200 { character, cost }.
+   - POST /api/inventory/use → body { inventoryId } →
+     * 400 { error: 'not_found' }, если строки нет.
+     * 400 { error: 'not_consumable' }, если item.type !== 'consumable'.
+     * 400 { error: 'no_heal_effect' }, если item.effect.heal отсутствует или 0.
+     * 400 { error: 'full_hp' }, если hp_current === hp_max.
+     * heal = min(item.effect.heal, hp_max - hp_current).
+     * hp_current += heal.
+     * inventory qty -= 1; если qty === 0 — удалить строку.
+     * 200 { character, inventory, healed: heal }.
+3. Тесты (Vitest, минимум 6):
+   - rest: в городе → hp восстановлен на 30%, last_rest_at установлен.
+   - rest: не в городе → 400 not_in_city.
+   - rest: повторно через 1 сек → 400 rest_cooldown.
+   - heal: в городе, деньги есть → hp_max, money уменьшено на cost.
+   - heal: не хватает денег → 400 not_enough_money.
+   - use: аптечка → hp восстановлен, qty уменьшен.
+   - use: hp_max → 400 full_hp.
+   - use: не consumable → 400 not_consumable.
+
+КЛИЕНТ:
+1. client/js/screens/location.js — добавить блок «Действия»:
+   - Если локация type === 'city':
+     * Кнопка «Отдохнуть» (disabled, если hp_max или кулдаун; показать оставшееся время).
+     * Кнопка «Госпиталь ({cost} гильз)» (disabled, если hp_max или не хватает денег; показать цену).
+   - Если hp_current < hp_max:
+     * Кнопка «Использовать аптечку» (если в инвентаре есть consumable с heal > 0; показать кол-во).
+   - После действия — обновить HP-бар и деньги (перерисовать экран локации или обновить блок).
+2. client/js/api.js — добавить rest(), heal(), useItem(inventoryId).
+3. i18n (RU + EN):
+   - ui.location.button.rest («Отдохнуть»)
+   - ui.location.button.heal («Госпиталь ({cost})»)
+   - ui.location.button.use_medkit («Использовать аптечку»)
+   - ui.location.rest.cooldown («Доступно через {sec} сек»)
+   - ui.location.rest.full_hp («HP полное»)
+   - ui.location.error.not_in_city («Только в городе»)
+   - ui.location.error.not_enough_money («Не хватает гильз»)
+   - ui.location.error.no_medkit («Нет аптечек»)
+   - ui.location.healed («Восстановлено {hp} HP»)
+   - ui.location.rest_done («Вы отдохнули»)
+
+ГРАНИЦЫ:
+- НЕ трогай бой, WS, sync, engine, formulas.
+- НЕ добавляй таблиц, только ALTER TABLE characters.
+- НЕ хардкодь строки — только i18n.
+
+КРИТЕРИЙ ПРИЁМКИ:
+1. В городе (zarya, pepel) — кнопки «Отдохнуть» и «Госпиталь».
+2. Отдохнуть → HP +30% (но не выше max), кулдаун 5 мин.
+3. Госпиталь → HP до max, деньги списаны.
+4. В пустоши — кнопок нет (или disabled).
+5. Аптечка в инвентаре → кнопка «Использовать аптечку», HP восстановлен, qty −1.
+6. npm test — все зелёные (минимум 6 новых).
+7. tsc --noEmit чисто.
+
+Начни с server/api/character.ts и server/api/inventory.ts.

@@ -1,0 +1,235 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 5e из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — AI мобов: цикл хода мобов, 2 профиля (aggressive, coward), движение, атака, побег. ТОЛЬКО ЭТО. НЕ реализуй WebSocket (6), полноценный экран боя (6), синхронизацию с инвентарём (6).
+
+ЭТАПЫ 1–5d СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log).
+- BattleStateSchema (server/game/battle/state.ts): Participant { id, kind, refId, stats{str,agi,int,end,per,intel}, hp, hpMax, ap, apMax, hex{q,r}, position, facing, equipment{weaponId, armor{head,torso,arms,legs}, weaponCharges?}, effects[], mobLevel?, mobNameKey?, characterName? }, Obstacle, BattleMap, BattleLogEntry { round, actor, type, text, createdAt }, BattleContext, healLimit, turnOrder, currentActorId, phase('player_turn'|'enemy_turn'|'finished'), status, log.
+- server/game/battle/formulas.ts: hitChance, rollDamage, rollCrit, applyCrit, armorAbsorb, damageAfterArmor, rollPenetration, damageWithPenetration, damageOutsideRange, xpForKill, xpToNextLevel, applyLevelUp. RNG инъекция.
+- server/game/battle/hex.ts: hexDistance, hexNeighbors, hexEquals, hexKey.
+- server/game/battle/los.ts: hasLineOfSight, canMoveTo, reachableHexes.
+- server/game/battle/actions.ts: Action, ActionResult, apCosts в config.
+- server/game/battle/engine.ts: applyAction для игрока (иммутабельно, structuredClone).
+- server/db/battle-repo.ts: createBattle, getBattle, updateBattleState, appendLog, getActiveBattleForCharacter, markFinished.
+- server/api/battle.ts: POST /start, GET /:id, GET /active, POST /:id/action, GET /:id/highlight. XP начисляется в API-слое (после victory), не в engine. useItem списывает инвентарь в API. reload = «из воздуха».
+- data/config/battle.json: hit, damage, armor, penetration, distance, xp, healLimit, apCosts.
+- data/level_table.json: 1–10.
+- client/js/battle/hex-render.js, screens/battle-map.js (панель действий, polling 1с).
+- characters: id=1, 6 статов, hp_current, hp_max, ap_max, xp.
+- inventory: equipped_slot (jacket→torso, boots→legs).
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono.
+- Все строки — только i18n (snake_case ключи, например battle.action.end_turn).
+
+ЗАДАЧА 5e — ТОЛЬКО AI мобов.
+
+1. КОНФИГ (data/config/battle.json — добавить секцию "ai"):
+{
+  "ai": {
+    "aggressive": {
+      "approach": true,              // двигается к ближайшему игроку
+      "stopAtRange": "weapon",      // останавливается на дистанции своего оружия (range)
+      "preferZone": "torso",        // зона атаки
+      "fleeAtHpPct": 0,             // никогда не бежит
+      "coverAware": false           // не ищет укрытий
+    },
+    "coward": {
+      "approach": true,
+      "stopAtRange": "weapon",
+      "preferZone": "torso",
+      "fleeAtHpPct": 30,            // бежит, если HP < 30% от max
+      "coverAware": true,           // ищет укрытие, если в бегстве
+      "fleeApThreshold": 4          // минимум ОД, чтобы попытаться убежать
+    }
+  }
+}
+Валидация через AiConfigSchema при загрузке.
+
+2. AI-МОДУЛЬ (server/game/battle/ai.ts — новый файл):
+
+// Чистые функции, без side effects, инъекция RNG.
+// Каждая функция возвращает решение, а применение — в runEnemyTurn.
+
+function decideMobAction(params: {
+  mob: Participant;
+  state: BattleState;
+  items: Item[];
+  config: BattleConfig;
+  rng: () => number;
+}): { type: 'move'; to: HexCoord }
+  | { type: 'shoot'; targetId: string; zone: Zone }
+  | { type: 'flee' }
+  | { type: 'wait' }   // закончить ход моба
+
+  // Логика:
+  // 1. Если mob.ai (по mobId из mobs.json) — coward и hp < max × fleeAtHpPct / 100:
+  //    - если ap >= fleeApThreshold → { type: 'flee' }
+  //    - иначе → искать укрытие (двигаться к ближайшему гексу с cover-возможностью)
+  // 2. Иначе (aggressive или coward не в бегстве):
+  //    - найти ближайшего живого врага (player). Если нет — 'wait'
+  //    - distance = hexDistance(mob.hex, player.hex)
+  //    - if distance <= weapon.range && hasLineOfSight(mob.hex, player.hex, obstacles):
+  //        → { type: 'shoot', targetId: player.id, zone: preferZone }
+  //      (если ap хватает на shootXxx; если нет — 'wait')
+  //    - else (нужно двигаться):
+  //        - если distance <= weapon.range, но нет LOS:
+  //            - найти соседний гекс, откуда есть LOS, и подвинуться туда (1 шаг)
+  //            - если нет — 'wait'
+  //        - else:
+  //            - reachable = reachableHexes({ from: mob.hex, maxSteps: floor(ap / moveCost), ... })
+  //            - выбрать гекс из reachable, который минимизирует расстояние до player
+  //              (при равенстве — предпочесть гекс с LOS к player, если distance <= weapon.range)
+  //            - если некуда — 'wait'
+  // 3. Если ap < moveCost — 'wait'
+  //
+  // ВАЖНО: mobile mob с range 1 (ближник) — подход + атака в упор.
+  // Mobile mob с range 3–4 (стрелок) — подход до range, потом стрельба.
+
+function findBestMoveHex(params: {
+  from: HexCoord;
+  targetHex: HexCoord;          // куда хотим приблизиться
+  reachable: Set<string>;
+  obstacles: Obstacle[];
+  occupiedHexes: HexCoord[];
+  weaponRange: number;
+  needsLos: boolean;            // true, если моб — стрелок (range > 1)
+}): HexCoord | null
+  - Перебрать reachable, для каждого посчитать:
+    * distanceToTarget
+    * hasLosToTarget
+  - Предпочесть: сначала те, где hasLosToTarget && distanceToTarget <= weaponRange, потом где hasLosToTarget, потом где distanceToTarget <= weaponRange, потом остальные.
+  - В каждой группе — минимальное distanceToTarget. При равенстве — стабильный порядок (по hexKey).
+  - Вернуть null, если reachable пуст.
+
+3. ЦИКЛ ХОДА МОБОВ (server/game/battle/engine.ts — добавить функцию):
+
+function runEnemyTurn(params: {
+  state: BattleState;
+  config: BattleConfig;
+  items: Item[];
+  mobs: Mob[];            // gameData.mobs
+  rng: () => number;
+  lang: 'ru'|'en';
+}): { newState: BattleState; logEntries: BattleLogEntry[] }
+
+  // Иммутабельно: structuredClone в начале.
+  // 1. phase === 'player_turn' → ошибка (это не ход мобов); вернуть state как есть + пустой лог.
+  // 2. Для каждого моба в turnOrder (кроме 'player'), если моб жив (hp > 0):
+  //    a. Восстановить ap = apMax (mob.moveAp + mob.attackAp — итого 12; в 5e apMax = 8, см. ниже)
+  //    b. Пока ap > 0:
+  //       - action = decideMobAction(...)
+  //       - если 'wait' — break
+  //       - применить действие (move/shoot/flee) напрямую (без applyAction — это для игрока)
+  //       - списать ap по moveCost/attackCost
+  //       - записать лог (actor = mob.id)
+  //       - если игрок мёртв — status = 'defeat', phase = 'finished', result = 'defeat' → break
+  //       - если все мобы мертвы — status = 'victory' (но в 5e мобы не умирают, только игрок)
+  //    c. Ограничить: максимум 5 действий за ход одного моба (защита от бесконечного цикла).
+  // 3. После всех мобов:
+  //    - round += 1
+  //    - healLimit.current = min(healLimit.max, healLimit.current + healLimit.regenPerRound)
+  //    - для всех участников: восстановить ap = apMax (игрок — при следующем его ходе, но проще — сразу)
+  //    - для всех effects: ttlRounds -= 1, удалить с ttl <= 0
+  //    - phase = 'player_turn', currentActorId = 'player'
+  //    - если status === 'defeat' → phase = 'finished'
+  //    - лог: "--- Раунд {round} ---"
+  // 4. Вернуть { newState, logEntries }
+
+  // ВАЖНО: apMax мобов. В 5a мы ставили ap = 4 (заглушка). В 5e — заменить на mob.moveAp + mob.attackAp (из mobs.json). Для pipe_rat: 4 + 8 = 12. Моб может сделать: 1 атаку (8) + 1 шаг (4) = 12. Или 3 шага (12) без атаки.
+  //   Если mob.moveAp/attackAp нет в items.json — дефолты 4/8.
+
+  // ВАЖНО: мобы не должны «ходить» в гекс, где стоит другой моб или игрок. canMoveTo проверяет occupiedHexes.
+  // ВАЖНО: мобы не должны «стрелять» в мёртвых (hp <= 0). Если все враги мертвы — 'wait'.
+  // ВАЖНО: для стрелков (range > 1) — нужен LOS. Для ближников (range === 1) — LOS не нужен (бьют в упор).
+
+4. ЗОНЫ АТАКИ МОБОВ:
+  - В mobs.json нет поля "zone" — по спеке 5e используем preferZone: 'torso' из конфига.
+  - В v0.2 — веса зон (как в v1.1).
+  - Для 5e: все мобы бьют в 'torso'. Это упрощение, но не ломает.
+
+5. API (server/api/battle.ts — доработать):
+  - POST /api/battle/:id/action { action: { type: 'end_turn' } } →
+    * если phase === 'player_turn' → применить applyAction (end_turn), затем СРАЗУ runEnemyTurn, сохранить, вернуть { state }
+    * если phase === 'enemy_turn' → 400 { error: 'not_your_turn' }
+  - ВАЖНО: сейчас endTurn в applyAction просто переключает phase на 'enemy_turn' и восстанавливает ОД. В 5e — endTurn триггерит runEnemyTurn. Изменение в API-слое: после applyAction(endTurn) — вызвать runEnemyTurn, объединить state.
+  - Либо альтернатива (чище): applyAction(endTurn) НЕ восстанавливает ОД и НЕ переключает round (это делает runEnemyTurn). Но это меняет поведение 5d. Решение: в 5d endTurn уже работает — в 5e меняем контракт: applyAction(endTurn) только ставит phase = 'enemy_turn'. Всё остальное (round, ap, healLimit) — в runEnemyTurn.
+  - ВАЖНО: после runEnemyTurn, если status === 'defeat' — сохранить, вернуть 200 с state (клиент увидит проигрыш). Не 400.
+
+6. КЛИЕНТ (client/js/screens/battle-map.js — доработать):
+  - После [Завершить ход] → POST /api/battle/:id/action { action: { type: 'end_turn' } } → в ответе полный state (с ходами мобов) → перерисовать.
+  - Пока идёт ход мобов, показать «Ход противника…» (но в 5e это синхронно в одном ответе, поэтому можно без индикатора).
+  - Polling 1с остаётся для внешних обновлений (хотя в 5e они не нужны).
+  - Лог: добавить actor (если actor !== 'player', показать имя моба перед текстом).
+  - i18n: ui.battle.enemy_turn ("Ход противника…"), ui.battle.log.actor_mob ("{mob}: {text}").
+
+7. ТЕСТЫ (Vitest, server/game/battle/__tests__/ai.test.ts и engine-enemy.test.ts) — минимум 20:
+
+ai.ts:
+  - decideMobAction aggressive, в упор (distance 1, LOS) → shoot
+  - decideMobAction aggressive, далеко (distance 5, range 1) → move (к игроку)
+  - decideMobAction aggressive, distance 2, range 1 → move (на 1 гекс к игроку)
+  - decideMobAction aggressive, distance 4, range 3, LOS → shoot
+  - decideMobAction aggressive, distance 4, range 3, нет LOS → move (найти LOS-гекс)
+  - decideMobAction coward, hp 10/30 (< 30%) → flee
+  - decideMobAction coward, hp 10/30, ap < fleeApThreshold → move (искать укрытие) или wait
+  - decideMobAction coward, hp 20/30 (не в бегстве) → shoot/move как aggressive
+  - decideMobAction с ap < moveCost → wait
+  - decideMobAction: все враги мертвы → wait
+  - findBestMoveHex: находит гекс с LOS
+  - findBestMoveHex: находит ближайший
+  - findBestMoveHex: пустой reachable → null
+
+runEnemyTurn:
+  - 1 моб aggressive, distance 1, ap 12 → 1 shoot, игрок получил урон, раунд +1, ap восстановлены, healLimit += 13
+  - 1 моб aggressive, distance 5, ap 12 → 3 move (12/4=3), distance уменьшилось на 3
+  - 1 моб aggressive, distance 5, range 3, ap 12 → 1 move (до distance 3) + 1 shoot (8 ОД) — если LOS появился, то shoot; иначе ещё move
+  - 1 моб coward, hp 10/30, ap 12 → flee (если успех — status 'fled')
+  - 1 моб coward, hp 10/30, flee провалился → моб остаётся, лог "побег не удался"
+  - Игрок умирает от моба → status 'defeat', phase 'finished'
+  - 2 моба aggressive, оба в упор → 2 shoot, игрок получил урон от обоих
+  - Мобы не ходят в занятые гексы (occupied)
+  - Мобы не стреляют сквозь стены (LOS)
+  - round увеличивается ровно на 1 за runEnemyTurn
+  - healLimit не превышает max
+  - ap всех участников = apMax после runEnemyTurn
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ реализуй: WebSocket (6), полноценный экран боя (6), синхронизацию с инвентарём (6), анимации (6), зоны атаки по весам (v0.2 — пока torso).
+- НЕ добавляй таблиц БД.
+- НЕ меняй BattleState-схему (кроме полей, которые уже есть).
+- НЕ меняй формулы, hex, los, actions.
+- НЕ трогай schemas/{items,mobs,world}.ts (кроме добавления поля в mobs.json — см. ниже).
+- НЕ хардкодь строки — только i18n.
+
+ДАННЫЕ (data/mobs.json — доработать):
+- У всех мобов уже есть moveAp и attackAp (по 4/8). Проверить. Если нет — добавить.
+- Если у моба range 1 — он ближник. Если range >= 3 — стрелок.
+- В 5e НЕ добавляем поле "zone" — все бьют в torso.
+
+i18n — новые ключи (RU + EN, snake_case):
+- battle.log.mob_move ({mob}, {q}, {r})
+- battle.log.mob_shoot_hit ({mob}, {dmg})
+- battle.log.mob_shoot_miss ({mob})
+- battle.log.mob_shoot_crit ({mob}, {dmg})
+- battle.log.mob_flee_success ({mob})
+- battle.log.mob_flee_fail ({mob})
+- battle.log.mob_wait ({mob})
+- battle.log.player_died
+- battle.log.enemy_defeated ({mob})
+- battle.log.round_start ({n})
+- ui.battle.enemy_turn ("Ход противника…")
+- ui.battle.log.actor_mob ("{mob}: {text}")
+
+КРИТЕРИЙ ПРИЁМКИ 5e:
+1. npm run dev — сервер стартует.
+2. Начать бой (POST /api/battle/start { mobIds: ["pipe_rat"] }).
+3. [Завершить ход] → в ответе state с ходом моба: грызун подошёл/укусил, лог, раунд 2, ОД восстановлены.
+4. Если грызун в упор (distance 1) — он кусает, игрок теряет HP.
+5. Если грызун далеко — он двигается на 2–3 гекса (12 ОД / 4 ОД за шаг = 3 шага).
+6. Игрок с 65 HP, грызун бьёт 2–5 × 3 (12 ОД / 8 ОД за атаку = 1 атака + 1 шаг). Проверить, что игрок не умирает с 1 хода.
+7. Coward: если у моба HP < 30% (не в 5e — мобы не теряют HP от игрока? Они теряют, если игрок стреляет. См. ниже), он бежит.
+8. Мобы не ходят сквозь стены.
+9. npm test — все зелёные (минимум 20 новых).
+10. tsc --noEmit чисто.
+11. Этапы 1–5d не сломаны.
+
+ВАЖНО: в 5e мобы могут УМЕРЕТЬ от выстрелов игрока (это 5d). Тогда decideMobAction для мёртвых — пропустить. runEnemyTurn фильтрует по hp > 0.
+
+Начни с data/config/battle.json (секция ai) и server/game/battle/ai.ts.

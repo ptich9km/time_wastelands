@@ -1,0 +1,28 @@
+{
+  "scripts": {
+    "dev": "tsx watch server/index.ts",
+    "build": "tsc",
+    "validate-data": "tsx server/scripts/validate-data.ts",
+    "validate-i18n": "tsx server/scripts/validate-i18n.ts",
+    "sim": "tsx server/scripts/sim.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.12",
+    "@types/better-sqlite3": "^9.6.0",
+    "better-sqlite3": "^12.11.1",
+    "fastify": "^5.12.8",
+    "tsx": "^4.23.15",
+    "vitest": "^4.1.12",
+    "ws": "^8.23.0",
+    "zod": "^4.6.7"
+  },
+  "type": "module",
+  "name": "pustosh-rusty-predel",
+  "version": "0.1.0",
+  "private": true,
+  "devDependencies": {
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "shops": [
+    {
+      "id": "zarya_shop",
+      "nameKey": "shop.zarya.name",
+      "locationId": "zarya",
+      "multiplier": 1.0,
+      "stock": [
+        { "itemId": "rusty_pipe", "baseQty": 3 },
+        { "itemId": "hunting_knife", "baseQty": 2 },
+        { "itemId": "leather_jacket", "baseQty": 2 },
+        { "itemId": "medkit", "baseQty": 5 },
+        { "itemId": "bandage", "baseQty": 10 },
+        { "itemId": "ammo_light", "baseQty": 5 },
+        { "itemId": "ammo_medium", "baseQty": 3 }
+      ]
+    },
+    {
+      "id": "pepel_shop",
+      "nameKey": "shop.pepel.name",
+      "locationId": "pepel",
+      "multiplier": 0.9,
+      "stock": [
+        { "itemId": "rusty_pipe", "baseQty": 2 },
+        { "itemId": "fire_axe", "baseQty": 1 },
+        { "itemId": "welder_mask", "baseQty": 2 },
+        { "itemId": "canvas_pants", "baseQty": 3 },
+        { "itemId": "worn_boots", "baseQty": 3 },
+        { "itemId": "medkit", "baseQty": 3 },
+        { "itemId": "spore_antidote", "baseQty": 2 },
+        { "itemId": "ammo_heavy", "baseQty": 2 }
+      ]
+    }
+  ]
+}

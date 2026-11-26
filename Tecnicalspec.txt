@@ -1,0 +1,150 @@
+Ты — senior full-stack разработчик. Реализуй ЭТАП 1 из ТЗ игры «Пустошь: Ржавый Предел» — локальной браузерной постапокалиптической RPG (2D, DOM, без 3D).
+
+КОНТЕКСТ ПРОЕКТА (не выходи за его рамки):
+- Локальная игра, один игрок, запуск `npm run dev`, открывается http://localhost:3000.
+- Стек: Node.js 20 + Fastify + better-sqlite3 + Zod + Vanilla JS (ES-модули) + HTML/CSS. Без React, без сборщиков, без Three.js, без Canvas.
+- Весь текст в UI — ТОЛЬКО через i18n-ключи. Хардкод строк запрещён.
+- Языки: RU + EN. По умолчанию — RU.
+- Данные игры лежат в data/ и валидируются Zod при старте. Если данные битые — сервер НЕ стартует.
+
+ЗАДАЧА ЭТАПА 1 — только каркас. Не реализуй бой, карту, предметы, персонажа. Только:
+1. Fastify-сервер на порту 3000, раздаёт статику из client/.
+2. SQLite-база (better-sqlite3), файл game.db рядом с проектом. На старте — создаёт таблицы, если их нет (см. схему ниже).
+3. Загрузчик данных: читает data/*.json, валидирует Zod-схемами, кросс-валидирует, кладёт в fastify.gameData. При ошибке — process.exit(1) с читаемым сообщением.
+4. i18n: загрузка data/i18n/ru.json и en.json, функция t(key, lang, params?) с подстановкой {placeholders}. Переключатель языка на клиенте (RU/EN), сохраняется в localStorage.
+5. Эндпоинты:
+   - GET /health → { ok: true, version: "0.1.0", locations: <число>, items: <число>, mobs: <число>, langs: ["ru","en"] }
+   - GET /api/i18n/:lang → весь словарь для языка (для клиента)
+6. Клиент: пустая тёмная страница (стиль-гайд ниже) с заголовком игры (из i18n), переключателем языка и текстом «Этап 1 готов. Мир: {N} локаций, {M} предметов, {K} мобов» (числа — из /health, текст — из i18n).
+7. Скрипты package.json: dev, validate-data, validate-i18n, test.
+8. README.md: 3 команды до игры + пометка «fan-made, не аффилировано с TimeZero».
+
+СТРУКТУРА ФАЙЛОВ (создай ровно так):
+server/
+  index.ts                    — точка входа Fastify
+  db/
+    index.ts                  — открытие БД, WAL, busy_timeout
+    schema.sql                — CREATE TABLE IF NOT EXISTS ...
+  schemas/
+    common.ts                 — HexColor, I18nKey, IdSchema, Rarity, Zone, Stats, Requirements, ZoneArmor, Range, LootEntry
+    art.ts                    — ArtSchema, SilhouetteSchema
+    items.ts                  — ItemSchema (discriminated union), ItemsFileSchema
+    mobs.ts                   — MobSchema, MobsFileSchema
+    world.ts                  — LocationSchema, WorldFileSchema + superRefine
+    battle_phrases.ts         — BattlePhrasesFileSchema
+    i18n.ts                   — I18nFileSchema
+    loader.ts                 — loadGameData(), crossValidate()
+  i18n/
+    index.ts                  — loadI18n(), t(key, lang, params)
+  scripts/
+    validate-data.ts
+    validate-i18n.ts
+client/
+  index.html
+  css/style.css
+  js/
+    main.js
+    api.js
+    i18n.js
+data/
+  world.json                  — заглушка: одна локация "zarya", валидная по схеме
+  items.json                  — заглушка: 1 предмет "rusty_pipe"
+  mobs.json                   — заглушка: 1 моб "pipe_rat"
+  battle_phrases.json         — заглушка: 1 категория "battle.start" с minVariants:1
+  i18n/ru.json
+  i18n/en.json
+package.json
+tsconfig.json
+README.md
+
+СХЕМА БД (schema.sql) — только то, что нужно этапу 1:
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+-- Остальные таблицы (characters, inventory, battle_sessions...) — этапы 2+. Не создавай их сейчас.
+
+СТИЛЬ-ГАЙД (CSS):
+- Фон #1a1614, панели #2a2420, границы #3a322c, текст #d4c9b8, акцент #c9a227, опасность #a83232.
+- Шрифты: Inter (UI), JetBrains Mono (моно). Подключи через Google Fonts <link>.
+- Скругления 4px, тонкие рамки 1px.
+- min-width: 1280px на body. Только десктоп.
+- Переключатель языка — две кнопки [RU] [EN], активная подсвечена акцентом.
+
+ZOD-СХЕМЫ (используй эти определения, не выдумывай свои):
+- I18nKey: /^[a-z0-9_]+(\.[a-z0-9_]+)+$/ — например "location.zarya.name"
+- IdSchema: /^[a-z0-9_]+$/
+- HexColor: /^#[0-9a-fA-F]{6}$/
+- ItemSchema: discriminatedUnion по полю type: "weapon" | "armor" | "consumable" | "ammo" | "misc".
+  Общие поля: id, nameKey, descriptionKey, icon (1–4 символа), price (int >=1), weight (>=0), rarity (enum), requirements (object), durability (int >=1, default 100), tags (string[]).
+  weapon: + slot:"weapon", weaponType (enum melee|light|medium|heavy|thrown|energy), damage {min,max}, accuracy (0-100), speed (0.1-5), charges?, ammoType? (если charges — обязателен ammoType).
+  armor: + slot (head|torso|jacket|legs|boots), armor {head,torso,arms,legs} (int >=0).
+  consumable: + effect {heal?, cure? (poison|bleed|stun), restoreCharges?, durationRounds?}.
+  ammo: + ammoType, charges (int >=1).
+  misc: без доп. полей.
+- ItemsFileSchema: { version: string, items: Item[] } + superRefine на дубликаты id + проверка, что для каждого weapon.ammoType есть ammo-предмет этого типа.
+- MobSchema: id, nameKey, descriptionKey?, level (1-50), hp (>=1), stats {str,agi,int,end} (1-50), attack {min, max, accuracy 0-100, zoneWeights {head,torso,arms,legs} — сумма 100}, ai (aggressive|coward|tactical|berserk), xp (>=0), loot { guaranteed?: LootEntry, rare: LootEntry[] }, spawnLevelRange [min,max], elite? {hpMult, dmgMult, xpMult, rareChanceBonus}, tags[].
+- LocationSchema: id, type (city|waste|ruins|mine|road|camp), nameKey, descriptionKey, ambientKeys[] (1-10), coords {x:0-19, y:0-19}, dangerLevel (0-100), levelRange [min,max], connections [{to, type: plain|road}] (>=1), spawnTable [{mobId, weight, min, max}] (default []), cover (default false), anomaly? (spore_low|rot_low), art { sky:[Hex,Hex], ground:Hex, silhouettes:[{type, x:0-1, y:0-1, scale:0.1-3, color:Hex, flip?}], weather?, fog? }, shopId?, npcIds[] (default []).
+- WorldFileSchema: { version, size:{width,height} (1-50), startLocationId, locations: Location[] (>=1) } + superRefine:
+  * дубликаты location.id,
+  * coords в пределах size,
+  * нет двух локаций на одних coords,
+  * все connections указывают на существующие id,
+  * связи двусторонние (если A→B, то B→A),
+  * связи только по соседству (|dx|<=1 и |dy|<=1),
+  * startLocationId существует.
+- BattlePhrasesFileSchema: { version, categories: Record<string, {minVariants:1-20, placeholders: string[]}> }, ключи категорий — /^battle\.[a-z0-9_.]+$/.
+- I18nFileSchema: Record<I18nKey, string(min 1)>.
+
+КРОСС-ВАЛИДАЦИЯ (в loader.ts после парсинга всех файлов):
+1. world.locations[].spawnTable[].mobId существуют в mobs.json.
+2. mobs[].loot.guaranteed.itemId и loot.rare[].itemId существуют в items.json.
+3. Все nameKey/descriptionKey/ambientKeys из world/items/mobs присутствуют в ru.json И en.json.
+4. Для каждой категории фраз: все ключи "cat.1".."cat.minVariants" есть в обоих языках, и каждая фраза содержит все плейсхолдеры из конфига.
+5. Если errors.length > 0 — throw new Error с перечислением всех ошибок (по одной на строку, с путём).
+
+ЗАГЛУШКИ data/ (создай сам, валидные по схемам):
+- world.json: одна локация id "zarya", type "city", coords {5,5}, connections — ОДНА связь на саму себя НЕЛЬЗЯ (валидатор отвергнет). Сделай ДВЕ локации: "zarya" (city, 5,5) и "ash_road" (road, 5,6), связи друг на друга, startLocationId="zarya".
+- items.json: 1 предмет "rusty_pipe" (weapon/melee).
+- mobs.json: 1 моб "pipe_rat" (level 1, ai aggressive), loot.guaranteed.itemId = "rusty_pipe" — НЕТ, лут должен ссылаться на предмет; сделай guaranteed itemId "rusty_pipe", weight 1.
+- battle_phrases.json: 1 категория "battle.start", minVariants:1, placeholders:["target"].
+- i18n/ru.json и en.json: все ключи, на которые ссылаются данные (location.zarya.name, location.zarya.desc, location.zarya.ambient.1, location.ash_road.*, item.rusty_pipe.name, item.rusty_pipe.desc, mob.pipe_rat.name, mob.pipe_rat.desc, battle.start.1) + ключи UI: ui.title, ui.lang.ru, ui.lang.en, ui.stage1.ready (с плейсхолдерами {locations},{items},{mobs}), ui.error.data.
+  ВАЖНО: battle.start.1 должен содержать {target}.
+  Тексты придумай сам в духе сеттинга «Серая Гниль» (постсоветская пустошь, Урал). RU и EN — с одинаковым набором ключей.
+
+i18n API:
+- loadI18n(dataDir) → { ru: Record<string,string>, en: Record<string,string> }, при старте проверяет, что наборы ключей совпадают (иначе throw).
+- t(key, lang, params?) → строка с подстановкой {k}=v из params; если ключа нет — вернуть `[missing:${key}]` и записать warning в лог.
+- На клиенте: js/i18n.js хранит текущий язык, setLang(lang) перезагружает словарь через /api/i18n/:lang, обновляет все элементы с data-i18n="key" и data-i18n-placeholder.
+- Все элементы с текстом в HTML имеют data-i18n. Хардкод строк в HTML запрещён (кроме <title> — но и его подставь через JS).
+
+ЭНДПОИНТЫ:
+GET /health → { ok: true, version: "0.1.0", locations: number, items: number, mobs: number, langs: ["ru","en"] }
+GET /api/i18n/:lang → { [key]: string }, 404 если lang не ru/en.
+GET /* → статика из client/ (fastify-static).
+
+КРИТЕРИЙ ПРИЁМКИ ЭТАПА 1:
+1. `npm i && npm run dev` — сервер стартует, в логе: "Данные загружены: 2 локаций, 1 предметов, 1 мобов".
+2. http://localhost:3000 открывается, тёмная страница, заголовок игры на RU.
+3. Переключатель [RU]/[EN] меняет ВСЕ тексты на странице, включая сообщение «Этап 1 готов…».
+4. GET /health возвращает корректные числа и langs.
+5. GET /api/i18n/ru и /api/i18n/en возвращают словари.
+6. Если в data/*.json сломать ключ (например, mobId в spawnTable указать несуществующий) — `npm run validate-data` падает с понятной ошибкой, сервер не стартует.
+7. Если удалить ключ из en.json — `npm run validate-i18n` падает.
+8. `npm test` — проходит (минимум 3 теста: t() с подстановкой, crossValidate() на валидных данных, loadI18n() на разных наборах ключей).
+9. README.md содержит 3 команды и пометку fan-made.
+
+ГРАНИЦЫ ЭТАПА (жёстко):
+- НЕ реализуй: создание персонажа, карту, бой, инвентарь, магазин, WebSocket, сессии, миграции, auth.
+- НЕ добавляй: TypeScript-декораторы, ORM, Prisma, Express, React, Vue, Vite, webpack.
+- НЕ создавай: data/shops.json, data/npcs.json (этап 8), лишние таблицы БД.
+- НЕ пиши: хардкод строк в UI, "TODO потом", "заглушка на будущее".
+- Если сомневаешься между «сделать сейчас» и «оставить на потом» — ОСТАВЬ НА ПОТОМ и добавь в README раздел "Backlog".
+
+ФОРМАТ ОТВЕТА:
+1. Сначала — дерево созданных файлов (кратко).
+2. Потом — содержимое каждого файла в отдельном блоке с указанием пути.
+3. В конце — чек-лист критерия приёмки (пункты 1–9), как проверить.
+4. Если чего-то не хватает из входных данных — спроси ОДИН раз, потом действуй по умолчанию.
+
+Начни с дерева файлов и server/index.ts.

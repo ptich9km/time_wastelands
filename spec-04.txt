@@ -1,0 +1,159 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 4a из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — обновление Zod-схем предметов и мобов под механику TimeZero + регенерация data/*.json. НЕ пиши клиентский/серверный код инвентаря — это шаг 4b.
+
+ЭТАПЫ 1–3 СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state).
+- server/schemas/{common,art,items,mobs,world,battle_phrases,i18n}.ts — Zod-схемы v1.1.
+- server/schemas/loader.ts — loadGameData() + crossValidate().
+- data/items.json (24 предмета), data/mobs.json (12 мобов), data/i18n/{ru,en}.json.
+- server/scripts/validate-data.ts — падает при ошибках.
+- i18n t() + validate-i18n.
+- Всё зелёное, 29 тестов.
+
+ЗАДАЧА 4a — ТОЛЬКО:
+1. Обновить server/schemas/items.ts, server/schemas/mobs.ts, server/schemas/common.ts (если нужно) под новые поля v2.0.
+2. Обновить data/items.json и data/mobs.json под новые схемы.
+3. Обновить server/schemas/loader.ts — кросс-валидация под новые поля.
+4. Обновить data/i18n/ru.json и en.json — новые ключи для новых предметов/мобов.
+5. Обновить server/scripts/validate-data.ts — если нужно.
+6. Прогнать npm run validate-data && npm run validate-i18n && npm test — всё зелёное.
+
+НЕ ДЕЛАЙ: инвентарь, экипировку, API /inventory, клиентские экраны, БД-таблицу inventory. Это шаг 4b.
+
+1. НОВАЯ СХЕМА ПРЕДМЕТОВ (server/schemas/items.ts):
+
+Базовые поля (все типы):
+- id: IdSchema
+- nameKey: I18nKey
+- descriptionKey: I18nKey
+- icon: эмодзи (1–4 символа)
+- price: int >= 1
+- weight: number >= 0
+- rarity: common | uncommon | rare | epic
+- requirements: { level?, str?, agi?, int?, end?, per?, intel? } — все опциональные, int >= 1
+- durability: int >= 1 (default 100)
+- tags: string[]
+
+Оружие (type: "weapon"):
+- slot: "weapon"
+- weaponCategory: "light" | "medium" | "heavy" | "sniper" | "melee"  — 5 категорий в MVP (без thrown/energy/bio)
+- level: int >= 1 — уровень оружия для формулы брони
+- damage: { min, max } — int >= 0, max >= min
+- range: int >= 1 — гексы
+- spread: int 0–100 — % попадания на макс. дальности
+- sniper: boolean (default false) — только для sniper-категории, если true — спец-система (10% в упор → spread/100 на 70% дальности → плато)
+- apCost: int >= 1 — ОД за выстрел
+- reloadAp: int >= 1 — ОД за перезарядку
+- pen: int 0–100 — % бронебойности
+- charges: int >= 1 — патронов в магазине
+- ammoType: "light" | "medium" | "heavy" — обязателен, если charges задан
+- УБРАТЬ: accuracy, speed, weaponType (старое)
+- НОВОЕ: две руки? — в MVP не нужно, не добавляй
+
+Броня (type: "armor"):
+- slot: "head" | "torso" | "jacket" | "legs" | "boots"
+- level: int >= 1 — уровень брони (для формулы поглощения)
+- armor: { head, torso, arms, legs } — int >= 0 (значение, не %)
+- убрать accuracy/speed (их и не было)
+
+Расходник (type: "consumable"):
+- effect: { heal?, cure?, restoreCharges?, durationRounds? }
+- без изменений
+
+Патроны (type: "ammo"):
+- ammoType: "light" | "medium" | "heavy"
+- charges: int >= 1 — сколько патронов в одной единице
+- damageBonus: int >= 0 (default 0) — прибавка к урону оружия
+
+Разное (type: "misc"):
+- без изменений
+
+ItemsFileSchema — superRefine:
+- дубликаты id
+- для каждого weapon.ammoType есть ammo-предмет этого типа
+- для каждого weapon.level >= 1 и range >= 1 и apCost >= 1
+- для каждого weapon.sniper: если true, то weaponCategory === "sniper"; если weaponCategory === "sniper", то sniper === true
+- для каждого armor.level >= 1
+
+2. НОВАЯ СХЕМА МОБОВ (server/schemas/mobs.ts):
+
+- id, nameKey, descriptionKey?, level, hp
+- stats: { str, agi, int, end, per, intel } — все int >= 1, но per и intel могут быть 0 (в отличие от v1.1)
+- attack: { min, max, pen, range } — pen 0–100, range >= 1, max >= min
+- ai: "aggressive" | "coward"  — в MVP только эти два (tactical/berserk — v0.2)
+- moveAp: int >= 1 (default 4)
+- attackAp: int >= 1 (default 8)
+- xp: int >= 0 — оставляем поле, но в v2.0 XP считается по HP моба (см. ниже), поле xp не используется. Оставь с default 0 для совместимости.
+- loot: { guaranteed?: LootEntry, rare: LootEntry[] }
+- spawnLevelRange: [min, max], max >= min
+- elite?: { hpMult, dmgMult, xpMult, rareChanceBonus }
+- tags: string[]
+
+MobsFileSchema superRefine:
+- дубликаты id
+- elite.hpMult > 0, dmgMult > 0, xpMult > 0, rareChanceBonus 0–1
+- attack.range >= 1
+
+3. КРОСС-ВАЛИДАЦИЯ (loader.ts) — обновить:
+- Как v1.1 (mobId, itemId, i18n-ключи, фразы) +
+- Для каждого mob.loot.guaranteed/rare: itemId существует в items.json
+- Для каждого weapon.ammoType: есть ammo-предмет с этим ammoType в items.json
+- Если в world.spawnTable.mobId — моб существует
+- Если mob.level > 1 и в world.spawnTable.levelRange [min,max] — предупреждение, если level моба вне [min,max] (не ошибка, warning в консоль)
+
+4. ДАННЫЕ — ПЕРЕГЕНЕРИРОВАТЬ data/items.json и data/mobs.json:
+
+ВАЖНО: старые данные (24 предмета, 12 мобов) — база. Переделай их под новые схемы, СОХРАНИВ:
+- id, nameKey, descriptionKey, icon, price, weight, rarity
+- Русские названия и описания (уже в i18n)
+- Смысл предметов (труба — melee, пистолет — light, и т.д.)
+
+ЧТО ДОБАВИТЬ (новые поля):
+- Оружие: weaponCategory, level, range, spread, sniper, apCost, reloadAp, pen, charges, ammoType. Убрать accuracy, speed, weaponType.
+- Броня: level. Поле armor оставить как было (это уже число, не %).
+- Патроны: damageBonus (default 0).
+
+НОВЫЕ ПРЕДМЕТЫ (добавь 4–6, чтобы было разнообразие):
+- Снайперская винтовка (sniper, level 4, range 8, spread 70, sniper: true, apCost 18, pen 40, charges 5, ammoType "medium")
+- Тяжёлое оружие: пулемёт (heavy, level 4, range 5, spread 40, apCost 15, pen 25, charges 30, ammoType "heavy")
+- Броня hi-tech (torso, level 4, armor {head:0, torso:120, arms:30, legs:20}, requirements {level:5, str:8})
+- Аптечка сильная (consumable, heal 40, requirements {level:3})
+- Стимулятор (consumable, heal 0, cure: "stun", durationRounds: 3)
+
+МОБЫ (12 штук) — переделать под новые схемы:
+- stats: добавить per и intel (per = 3–8 в зависимости от уровня, intel = 1–3)
+- attack: добавить pen (0 для животных, 10–25 для людей) и range (1 для ближников, 3–4 для стрелков)
+- ai: "aggressive" или "coward" (никаких tactical/berserk)
+- moveAp: 4, attackAp: 8
+- xp: 0 (не используется)
+
+ДОБАВЬ 2–3 СТРЕЛКОВ (range 3–4):
+- Бандит-стрелок (level 3, range 3, pen 15, ai aggressive)
+- Споровый стрелок (level 4, range 4, pen 10, ai coward)
+- Или похожие — на твоё усмотрение, но с русскими nameKey/descriptionKey и переводами.
+
+5. i18n — новые ключи для новых предметов/мобов (RU + EN, наборы совпадают). Старые ключи не удалять.
+
+6. ТЕСТЫ (Vitest, в server/schemas/__tests__/):
+- ItemSchema: валидное оружие, валидная броня, невалидное (sniper без sniper-категории → ошибка).
+- MobSchema: валидный моб, невалидный (per < 1 → ошибка, ai = "tactical" → ошибка).
+- crossValidate: mobId не существует → ошибка; ammoType без патронов → ошибка; i18n-ключ отсутствует → ошибка.
+
+7. НЕ ТРОГАЙ:
+- server/db/*.ts (кроме если нужно добавить таблицу — НЕТ, не нужно)
+- server/api/character.ts, world.ts
+- client/*
+- server/i18n/index.ts
+
+КРИТЕРИЙ ПРИЁМКИ ШАГА 4a:
+1. npm run validate-data — зелёный, в логе «Данные загружены: 12 локаций, 28–30 предметов, 14–15 мобов» (числа примерные, но больше старых).
+2. npm run validate-i18n — зелёный.
+3. npm test — все зелёные (минимум 6 новых тестов на схемы).
+4. GET /health (если жив) — locations/items/mobs обновились.
+5. Сервер стартует, /api/world и /api/location работают (этап 3 не сломан).
+6. tsc --noEmit чисто.
+7. В data/items.json есть снайперка, пулемёт, hi-tech броня.
+8. В data/mobs.json есть хотя бы 2 стрелка (range >= 3).
+
+ФОРМАТ ОТВЕТА: дерево изменённых файлов + содержимое изменённых схем + summary что поменялось в данных + чек-лист.
+
+Начни с server/schemas/items.ts.

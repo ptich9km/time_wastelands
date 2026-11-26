@@ -1,0 +1,240 @@
+/* Stage 6b: battle animations and full result overlay. */
+
+@keyframes hit-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+  75% { transform: translateX(-2px); }
+}
+
+@keyframes miss-float {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-22px); opacity: 0; }
+}
+
+@keyframes crit-flash {
+  0% { filter: none; transform: scale(1); }
+  40% { filter: drop-shadow(0 0 10px var(--accent)); transform: scale(1.08); }
+  100% { filter: none; transform: scale(1); }
+}
+
+@keyframes death-fade {
+  from { opacity: 1; }
+  to { opacity: 0.3; }
+}
+
+@keyframes stance-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.45); }
+}
+
+@keyframes turn-glow {
+  from { stroke: var(--border); stroke-width: 1; filter: none; }
+  to { stroke: var(--accent); stroke-width: 3; filter: drop-shadow(0 0 5px var(--accent)); }
+}
+
+@keyframes float-up {
+  0% { transform: translate(-50%, -10px); opacity: 1; }
+  100% { transform: translate(-50%, -48px); opacity: 0; }
+}
+
+@keyframes hp-heal-flash {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 10px #5a8b5a; }
+}
+
+@keyframes result-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes levelup-pulse {
+  from { transform: scale(1); opacity: 0.85; }
+  to { transform: scale(1.06); opacity: 1; }
+}
+
+/* SVG layers: animation classes are added by hex-render on WS updates. */
+.battle-map-view {
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.battle-map-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.battle-map-svg .hex {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.battle-map-svg .anim-hit { animation: hit-shake 0.2s ease-in-out; }
+.battle-map-svg .anim-miss { animation: miss-float 0.6s ease-out; }
+.battle-map-svg .anim-crit { animation: crit-flash 0.3s ease-out; }
+.battle-map-svg .anim-death { animation: death-fade 0.6s ease-out forwards; }
+.battle-map-svg .turn-glow { animation: turn-glow 0.8s infinite alternate; }
+.battle-map-svg .position-icon.anim-stance-pulse { animation: stance-pulse 0.4s ease-out; }
+
+.battle-floating-layer {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.damage-number,
+.miss-label,
+.crit-label {
+  position: absolute;
+  transform: translate(-50%, -10px);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px #000;
+  animation: float-up 0.8s ease-out forwards;
+}
+
+.damage-number { color: var(--text); }
+.miss-label { color: #9a9188; font-size: 13px; }
+.crit-label { color: var(--accent); font-size: 18px; }
+
+/* Participants and turn indicator. */
+.battle-turn {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.battle-participant-pose {
+  display: inline-block;
+  width: 18px;
+  text-align: center;
+}
+
+.battle-participant-pose.anim-stance-pulse { animation: stance-pulse 0.4s ease-out; }
+
+.battle-hp-bar {
+  transition: box-shadow 0.3s ease, background-color 0.3s ease;
+}
+
+.battle-hp-bar .hp-bar-fill { transition: width 0.3s ease, background-color 0.3s ease; }
+.battle-hp-bar.hp-high .hp-bar-fill { background: #5a8b5a; }
+.battle-hp-bar.hp-mid .hp-bar-fill { background: var(--accent); }
+.battle-hp-bar.hp-low .hp-bar-fill { background: var(--danger); }
+.battle-hp-bar.hp-heal-flash { animation: hp-heal-flash 0.4s ease-out; }
+
+/* Log colors from the specification. */
+.battle-log-hit { color: var(--text); }
+.battle-log-miss { color: #6b6258; }
+.battle-log-crit { color: var(--accent); font-weight: 700; }
+.battle-log-info,
+.battle-log-system { color: #5a8ba8; }
+.battle-log-system { font-style: italic; }
+.battle-log-death { color: var(--danger); font-weight: 700; }
+.battle-log-heal { color: #5a8b5a; }
+.battle-log-flee { color: var(--accent); }
+
+.battle-mute-btn {
+  padding: 4px 8px;
+  font-size: 14px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.battle-mute-btn:hover { border-color: var(--accent); }
+
+/* Full result overlay. */
+.battle-result-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 9, 8, 0.88);
+  animation: result-fade 0.5s ease-out;
+}
+
+.battle-result-card {
+  width: min(560px, 90vw);
+  padding: 30px 34px;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.battle-result-icon { font-size: 40px; line-height: 1; }
+
+.battle-result-title {
+  margin: 10px 0 18px;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.result-victory .battle-result-title { color: var(--accent); }
+.result-defeat .battle-result-title { color: var(--danger); }
+.result-fled .battle-result-title { color: var(--text); }
+
+.battle-result-section {
+  margin: 12px 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.battle-result-section p { margin: 4px 0; }
+
+.battle-result-loot-title { color: var(--accent); }
+
+.battle-result-loot-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+
+.battle-result-loot-icon { font-size: 18px; }
+
+.battle-result-levelup {
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+  animation: levelup-pulse 0.8s infinite alternate;
+}
+
+.battle-result-stats { color: var(--text); font-size: 12px; }
+
+.battle-result-death-intro {
+  margin: 18px 0;
+  color: var(--danger);
+  font-size: 16px;
+  letter-spacing: 0.5px;
+}
+
+.battle-result-overlay.defeat-pending .battle-result-details,
+.battle-result-overlay.defeat-pending .battle-result-return { display: none; }
+
+.battle-result-return {
+  margin-top: 18px;
+  padding: 12px 28px;
+  font-size: 15px;
+}
+
+.battle-result-return:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

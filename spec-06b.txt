@@ -1,0 +1,185 @@
+Ты — senior frontend-разработчик. Реализуй ШАГ 6b из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — полноценный UI боя: CSS-анимации, звук через WebAudio, экран результата, экран смерти, полировка. ТОЛЬКО КЛИЕНТ. Не трогай сервер (кроме i18n-ключей). Не переделывай WS, sync, engine.
+
+ЭТАПЫ 1–6a СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, WebSocket /ws/battle/:id?lang=ru|en.
+- server/ws/battle.ts: комнаты, первичный { type: 'state' }, broadcast { type: 'update' } и { type: 'end' }.
+- server/game/battle/sync.ts: идемпотентный, HP/XP/level/лут/патроны. rewards: { xp, loot, levelUp, newLevel?, moneyLost? }.
+- client/js/screens/battle-map.js: WS-клиент, дельта-лог, abandon через REST, компактный блок результата.
+- client/js/battle/hex-render.js: SVG-карта, участники, highlight.
+- client/js/main.js: роутинг character|map|location|inventory|battle-map.
+- client/css/style.css: базовые стили, индикатор online/offline, компактный блок результата.
+- BattleLogEntry.type: 'hit'|'miss'|'crit'|'info'|'system'|'flee'|'death'|'heal'.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono. min-width 1280px. Только десктоп.
+- Все строки — только i18n (snake_case ключи).
+- 266 тестов зелёные, tsc чистый.
+
+ЗАДАЧА 6b — ТОЛЬКО КЛИЕНТ:
+1. CSS-анимации (6 штук).
+2. Звук через WebAudio (синтез, 8 звуков).
+3. Полноценный экран результата (victory/defeat/fled).
+4. Экран смерти (часть экрана результата при defeat).
+5. Полировка: цветной лог, индикатор хода, зоны, HP-бары, иконки.
+
+НЕ РЕАЛИЗУЙ: новый сервер, новые WS-события, изменения в engine/sync, изменения в data/ (кроме i18n).
+
+1. CSS-АНИМАЦИИ (client/css/battle.css — новый файл, подключить в index.html):
+
+@keyframes hit-shake — короткая тряска влево-вправо (0.2s), применяется к гексу цели при попадании
+@keyframes miss-float — всплывающий текст «мимо» вверх (0.6s), применяется к гексу цели при промахе
+@keyframes crit-flash — жёлтая вспышка (0.3s) + увеличение, применяется к гексу цели при крите
+@keyframes death-fade — прозрачность 1→0.3 (0.6s), применяется к гексу мёртвого
+@keyframes stance-pulse — пульсация иконки позы (0.4s), применяется к иконке позы при смене
+@keyframes turn-glow — свечение рамки (0.8s infinite alternate), применяется к гексу текущего актора
+
+Также:
+- .damage-number — всплывающее число урона над гексом (абсолютное позиционирование, анимация float-up)
+- .miss-label — «Промах!» / «Miss!» (i18n)
+- .crit-label — «КРИТ!» / «CRIT!»
+- Классы-модификаторы: .anim-hit, .anim-miss, .anim-crit, .anim-death — навешиваются на гекс на время анимации, снимаются через animationend.
+
+ЗВУК — WebAudio, синтез, ноль файлов (client/js/audio.js — новый файл):
+
+class AudioSynth {
+  constructor() { this.ctx = null; this.enabled = false; this.volume = 0.5; }
+  init() { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); this.enabled = true; }
+  setVolume(v) { this.volume = v; }
+  playHit() { /* короткий square-wave 120Hz + noise burst 0.1s */ }
+  playMiss() { /* sine 400Hz → 200Hz за 0.15s */ }
+  playCrit() { /* 2 ноты вверх (200→400Hz), 0.2s */ }
+  playDeath() { /* низкий noise 60Hz с фильтром, 0.5s */ }
+  playHeal() { /* sine 600Hz → 800Hz, 0.3s */ }
+  playReload() { /* клик: square 800Hz 0.05s × 2 */ }
+  playVictory() { /* 3 ноты: C-E-G (261, 330, 392Hz), 0.6s */ }
+  playDefeat() { /* 2 ноты вниз: E-C (330→261Hz), 0.5s */ }
+  playStance() { /* клик 600Hz 0.05s */ }
+}
+
+- При первом клике пользователя (любого) — audio.init() (браузеры блокируют AudioContext до user gesture).
+- Все методы — no-op, если !enabled.
+- Громкость: master (0..1), сохранять в localStorage 'audio_volume'.
+- Кнопка mute в углу экрана боя (иконка 🔊 / 🔇), состояние в localStorage 'audio_muted'.
+- Не использовать файлы. Только OscillatorNode + GainNode + BiquadFilterNode + BufferSource для noise.
+
+2. ПОЛНОЦЕННЫЙ ЭКРАН РЕЗУЛЬТАТА (client/js/screens/battle-result.js — новый файл):
+
+function showBattleResult(container, params: {
+  result: 'victory' | 'defeat' | 'fled';
+  rewards: { xp, loot: [{itemId, qty}], levelUp, newLevel?, moneyLost? };
+  items: Item[];  // для названий лута (nameKey → i18n)
+  onReturn: () => void;  // переход на экран локации
+})
+
+  - Полноэкранный оверлей поверх карты боя (или вместо неё — решай сам).
+  - Заголовок:
+    * victory: «Победа!» (акцент #c9a227), иконка 🏆
+    * defeat: «Поражение» (опасность #a83232), иконка 💀
+    * fled: «Вы покинули бой» (текст #d4c9b8), иконка 🏃
+  - Блок наград (для victory):
+    * «Опыт: +{xp}»
+    * «Добыча:» — список предметов (иконка + nameKey + ×qty), или «Ничего» если пусто
+    * Если levelUp — большая строка «Новый уровень: {newLevel}!» с анимацией pulse, и блок «Статы выросли» (какие именно — опционально, можно опустить в 6b)
+    * Звук: playVictory()
+  - Блок потерь (для defeat):
+    * «Вы очнулись в {city}» (город = startLocationId, nameKey через i18n)
+    * «Потеряно: {moneyLost} гильз»
+    * «HP: 1 / {hpMax}»
+    * Звук: playDefeat()
+  - Блок для fled:
+    * «Вы покинули бой. Опыт и добыча не начислены.»
+    * Без звука.
+  - Кнопка «Вернуться в локацию» (единственная, крупная, внизу) → onReturn().
+  - Кнопки недоступны, пока идёт анимация появления (0.5s fade-in).
+  - Стиль: тёмная панель, рамки, акцент, моноширинный шрифт для цифр.
+
+3. ЭКРАН СМЕРТИ — часть battle-result при defeat. Не отдельный экран. Но с более мрачным оформлением: затемнение фона, текст «Вы падаете. Мир гаснет.» (i18n), затем через 1 секунду — блок потерь и кнопка.
+
+4. ПОЛИРОВКА battle-map.js:
+
+  - Цветной лог (уже есть в 5d-fix, но проверить):
+    * hit → #d4c9b8
+    * miss → #6b6258
+    * crit → #c9a227 (жирный)
+    * info → #5a8ba8
+    * system → #5a8ba8 (курсив)
+    * death → #a83232 (жирный)
+    * heal → #5a8b5a
+    * flee → #c9a227
+  - Индикатор хода:
+    * Если currentActorId === 'player' → «Ваш ход (раунд N)» акцентом
+    * Иначе → «Ход {mobName}…» (mobName из participant.mobNameKey → i18n)
+  - HP-бары участников (в списке сверху):
+    * Цвет: > 50% — #5a8b5a, 25–50% — #c9a227, < 25% — #a83232
+    * Плавное изменение через transition 0.3s
+  - Иконки позы: stand 🧍, crouch 🧎, run 🏃, cover 🛡️ — рядом с именем.
+  - Зоны при выстреле (мини-панель): 4 кнопки [Голова] [Торс] [Руки] [Ноги] с шансом попадания (получить через GET /api/battle/:id/highlight?action=shoot&targetId=... — если такой нет, показать без процентов).
+  - При клике на действие «Выстрел» — подсветка LOS-гексов.
+  - При клике на «Движение» — подсветка reachable.
+
+5. АНИМАЦИИ — подключить к WS-событиям:
+
+  - При получении { type: 'update' } — сравнить новый state со старым (последним), определить, что произошло:
+    * Если у какого-то участника hp уменьшился → hit или crit (по последней записи лога с этим actor). Навесить .anim-hit или .anim-crit на гекс. Показать .damage-number с числом урона (из лога — парсить или добавить в BattleLogEntry поле damage? — В 6b НЕ МЕНЯЕМ сервер; парсим из текста регуляркой /(\d+)/). Если не парсится — не показывать число, только анимацию.
+    * Если hp === 0 → .anim-death.
+    * Если position изменилась → .anim-stance-pulse на иконке.
+    * Если currentActorId изменился → обновить turn-glow на гексе.
+  - Звуки привязать к тем же событиям: hit → playHit, crit → playCrit, death → playDeath, heal → playHeal, stance → playStance, reload → playReload.
+  - При { type: 'end' } → остановить WS, показать battle-result с rewards.
+
+6. i18n — новые ключи (RU + EN, snake_case):
+  - ui.battle.result.victory_title («Победа!»)
+  - ui.battle.result.defeat_title («Поражение»)
+  - ui.battle.result.fled_title («Вы покинули бой»)
+  - ui.battle.result.xp («Опыт: +{xp}»)
+  - ui.battle.result.loot_title («Добыча:»)
+  - ui.battle.result.loot_empty («Ничего»)
+  - ui.battle.result.levelup («Новый уровень: {level}!»)
+  - ui.battle.result.stats_grew («Статы выросли!»)
+  - ui.battle.result.defeat_intro («Вы падаете. Мир гаснет.»)
+  - ui.battle.result.defeat_wake («Вы очнулись в {city}»)
+  - ui.battle.result.money_lost («Потеряно: {money} гильз»)
+  - ui.battle.result.hp_after («HP: {hp} / {max}»)
+  - ui.battle.result.fled_text («Опыт и добыча не начислены.»)
+  - ui.battle.result.button_return («Вернуться в локацию»)
+  - ui.battle.turn.player («Ваш ход (раунд {round})»)
+  - ui.battle.turn.mob («Ход {mob}…»)
+  - ui.battle.mute.on («Звук вкл»)
+  - ui.battle.mute.off («Звук выкл»)
+  - ui.battle.zone.head, .zone.torso, .zone.arms, .zone.legs — уже есть (проверить)
+  - battle.log.damage_taken — опционально, если нужно для парсинга.
+
+7. ПРОИЗВОДИТЕЛЬНОСТЬ:
+  - Дельта-лог (из 5d-fix) — не перерисовывать всё.
+  - Анимации — через CSS, не через JS-таймеры (кроме damage-number, там setTimeout для удаления элемента).
+  - Звук — один AudioContext на всю игру, не создавать на каждый звук.
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ трогай сервер, WS, sync, engine, formulas.
+- НЕ добавляй таблиц, полей, эндпоинтов.
+- НЕ меняй data/ (кроме i18n).
+- НЕ трогай другие экраны (character, map, location, inventory).
+- НЕ хардкодь строки — только i18n.
+- НЕ используй спрайты, PNG, JPG, аудиофайлы. Только CSS + WebAudio.
+- Звук — только через audio.js, не инлайн в компонентах.
+
+КРИТЕРИЙ ПРИЁМКИ 6b:
+1. npm run dev — сервер стартует.
+2. Начать бой → экран карты с зелёной точкой online.
+3. При попадании по мобу — гекс трясётся (anim-hit), звук удара, всплывает число урона.
+4. При промахе — гекс выпускает «мимо» (anim-miss), звук промаха.
+5. При крите — жёлтая вспышка (anim-crit), звук крита, число урона.
+6. При убийстве моба — гекс тускнеет (anim-death), звук смерти.
+7. При лечении — звук heal, зелёная вспышка на HP-баре.
+8. При смене позы — иконка позы пульсирует (anim-stance-pulse), звук клика.
+9. При перезарядке — звук reload (2 клика).
+10. При победе — полноэкранный результат «Победа!», XP, лут, levelup (если есть), кнопка «Вернуться в локацию», звук victory.
+11. При поражении — экран смерти «Вы падаете. Мир гаснет.» → через 1с блок потерь, звук defeat.
+12. При abandon — результат «Вы покинули бой», без XP/лута, без звука.
+13. Кнопка mute — 🔊 / 🔇, звук выключается/включается, состояние в localStorage.
+14. Цветной лог — hit белый, miss серый, crit жёлтый, death красный, heal зелёный.
+15. Индикатор хода — «Ваш ход (раунд N)» / «Ход {mob}…».
+16. HP-бары меняют цвет (зелёный/жёлтый/красный).
+17. npm test — все зелёные (серверные тесты не трогаются, минимум 266).
+18. tsc --noEmit чисто.
+19. Этапы 1–6a не сломаны.
+
+Начни с client/js/audio.js и client/css/battle.css.

@@ -1,0 +1,122 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 4b из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — инвентарь, экипировка, требования. НЕ трогай бой, магазин, NPC, карту.
+
+ЭТАПЫ 1–3 И ШАГ 4a СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state).
+- server/schemas/{common,art,items,mobs,world,battle_phrases,i18n}.ts — Zod-схемы v2.0:
+  * items: weapon (weaponCategory: light|medium|heavy|sniper|melee, level, damage, range, spread, sniper, apCost, reloadAp, pen, charges, ammoType), armor (slot, level, armor {head,torso,arms,legs}), consumable, ammo (ammoType, charges, damageBonus), misc.
+  * mobs: stats {str,agi,int,end,per,intel}, attack {min,max,pen,range}, ai: aggressive|coward, moveAp, attackAp, loot.
+- loader.ts + crossValidate() — зелёные.
+- data/items.json (29 предметов), data/mobs.json (14 мобов), i18n ru/en (260 ключей, наборы совпадают).
+- server/game/entities/character.ts: createCharacter(db, {name}), getCharacter(db). Статы фиксированные 3/3/3/3/0/0, hp_max=50+5×"end", ap_max=15+2×"end", location_id = world.startLocationId.
+- server/db/character-repo.ts, server/api/character.ts, server/api/world.ts — работают.
+- client/js/main.js (роутинг character|map|location), screens/{character,map,location}.js, api.js, i18n.js. Переключатель RU/EN.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono. min-width 1280px.
+- Все строки — только i18n.
+
+ЗАДАЧА 4b — инвентарь и экипировка. ТОЛЬКО ЭТО.
+
+1. СХЕМА БД (добавь в server/db/schema.sql, CREATE TABLE IF NOT EXISTS):
+   inventory (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     character_id INTEGER NOT NULL DEFAULT 1 CHECK (character_id = 1),
+     item_id TEXT NOT NULL,
+     qty INTEGER NOT NULL DEFAULT 1 CHECK (qty >= 1),
+     equipped_slot TEXT,                    -- NULL = не надет; иначе "weapon" | "head" | "torso" | "jacket" | "legs" | "boots"
+     FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+   )
+   -- Индексы: (character_id), (character_id, equipped_slot), (character_id, item_id)
+   -- Один слот — один предмет: UNIQUE(character_id, equipped_slot) WHERE equipped_slot IS NOT NULL
+   -- (в SQLite partial unique index: CREATE UNIQUE INDEX ... WHERE equipped_slot IS NOT NULL)
+
+2. РЕПОЗИТОРИЙ (server/db/inventory-repo.ts):
+   - getInventory(db) → [{ id, itemId, qty, equippedSlot }]
+   - getItemById(db, itemId) — вернуть предмет из gameData.items (не из БД)
+   - addItem(db, itemId, qty) — upsert: если такой itemId есть и не надет — qty += qty; если надет или нет — создать новую строку. Учесть: одинаковые предметы в разных слотах — отдельные строки.
+   - removeItem(db, inventoryId, qty) — уменьшить qty; если 0 — удалить строку.
+   - equipItem(db, inventoryId) — надеть предмет в его слот. Если в слоте уже что-то надето — снять (equipped_slot = NULL). Валидация: слот существует, requirements выполнены (см. ниже). Ошибки: "not_found", "slot_occupied_by_other_character" (нет), "requirements_not_met" (с деталями: {level?: {need, have}, str?: {need, have}, ...}).
+   - unequipItem(db, inventoryId) — снять (equipped_slot = NULL).
+   - getEquipped(db) → [{ slot, inventoryId, itemId }] — все надетые.
+   - canEquip(character, item) → { ok: true } | { ok: false, missing: {level?: {need,have}, str?: {...}, ...} }
+     * Проверяет requirements предмета против статов персонажа.
+     * Только для type: weapon|armor. Для consumable/ammo/misc — { ok: false, missing: { not_equippable: true } }.
+
+3. СТАРТОВЫЙ НАБОР (server/game/entities/character.ts):
+   - При createCharacter: добавить в inventory:
+     * rusty_pipe ×1 (weapon, надет в "weapon" — если есть в items.json; если нет — пропустить)
+     * leather_jacket ×1 (armor, jacket, надет)
+     * medkit ×2 (consumable, не надет)
+   - ВАЖНО: стартовый набор — транзакционно с созданием персонажа. Если что-то падает — откат всего.
+   - Backfill: при старте сервера, если персонаж существует, а inventory пуст — выдать стартовый набор (одноразово). Пометить в meta: key="starter_kit_granted", value="1". Если meta уже есть — пропустить.
+   - ВАЖНО: не давать starter_kit повторно (проверять meta).
+
+4. REST API (server/api/inventory.ts — новый файл, регистрируется в index.ts):
+   - GET /api/inventory → 200 {
+       items: [{ inventoryId, itemId, qty, equippedSlot, item }],  // item — полный объект предмета из gameData
+       equipped: { weapon?, head?, torso?, jacket?, legs?, boots? }, // inventoryId + itemId
+       capacity: { usedWeight, maxWeight, usedSlots, maxSlots }     // в v2.0 вес не ограничивает, но считаем; maxSlots = 20
+     }
+     * 404, если персонажа нет.
+   - POST /api/inventory/equip → body { inventoryId }
+     * 200 { equipped, inventory: [...items] } — обновлённое состояние
+     * 400 { error: "not_found" | "not_equippable" | "requirements_not_met", missing? }
+     * requirements_not_met: { missing: { level?: {need, have}, str?: {need, have}, ... } }
+   - POST /api/inventory/unequip → body { inventoryId }
+     * 200 { equipped, inventory }
+     * 400 { error: "not_found" | "not_equipped" }
+   - Все ответы JSON.
+
+5. КЛИЕНТ:
+   - client/js/api.js — добавить getInventory(), equipItem(inventoryId), unequipItem(inventoryId).
+   - client/js/screens/inventory.js — экран инвентаря:
+     * Сетка/список предметов: иконка-эмодзи, название (nameKey → i18n), кол-во (qty, если > 1), редкость цветом (common #d4c9b8, uncommon #5a8ba8, rare #c9a227, epic #a83232).
+     * Слоты экипировки (отдельная панель сверху): оружие, голова, торс, куртка, ноги, ботинки. Пустой слот — рамка с подписью. Занятый — иконка + название.
+     * Клик по предмету в списке → панель с деталями: название, описание, требования (уровень, статы), урон/защита, вес. Кнопки: [Надеть] / [Снять] / [Закрыть].
+     * Если надеть нельзя — кнопка disabled + тултип с причиной (по missing).
+     * Только для персонажа в городе? — НЕТ, в v2.0 можно менять экипировку где угодно (упрощение; в TZ нельзя в бою — но бой ещё не сделан).
+   - client/js/screens/character.js — добавить блок «Экипировка» с текущими слотами (иконка + название) + кнопку «Инвентарь». Кнопка «Карта мира» — уже есть.
+   - client/js/main.js — добавить роутинг 'inventory'.
+   - CSS — классы: .inventory-screen, .inv-grid, .inv-item, .inv-item.equipped, .inv-detail, .equip-slots, .equip-slot, .equip-slot.empty, .requirements-missing. Стиль — по гайду.
+   - i18n-ключи (RU + EN):
+     * ui.inventory.title, .empty, .slot.weapon, .slot.head, .slot.torso, .slot.jacket, .slot.legs, .slot.boots, .slot.empty
+     * ui.inventory.button.equip, .button.unequip, .button.close, .button.character
+     * ui.inventory.detail.requirements ({level}, {str}, {agi}, {int}, {end}, {per}, {intel} — рендер только тех, что есть), .detail.weight ({w}), .detail.damage ({min}–{max}), .detail.armor ({head}/{torso}/{arms}/{legs}), .detail.range ({r}), .detail.pen ({pen}%), .detail.ap ({ap})
+     * ui.inventory.error.not_equippable, .error.requirements_not_met ({missing}), .error.not_found
+     * ui.inventory.capacity ({used}/{max})
+   - Порядок слотов: weapon, head, torso, jacket, legs, boots.
+
+6. ТЕСТЫ (Vitest, in-memory SQLite):
+   - createCharacter → inventory содержит rusty_pipe (equipped), leather_jacket (equipped), medkit ×2 (не надет).
+   - Backfill: персонаж без inventory → после старта сервера есть стартовый набор, повторно не выдаётся.
+   - equipItem: надеть medkit → "not_equippable".
+   - equipItem: надеть rusty_pipe, когда уже надет leather_jacket → оба на месте (разные слоты).
+   - equipItem: надеть второй rusty_pipe в weapon → первый снимается (equipped_slot = NULL), второй надет.
+   - equipItem: requirements_not_met — создать предмет с requirements {level: 5}, персонаж 1 ур. → 400 с missing.level {need: 5, have: 1}.
+   - unequipItem: снять надетое → equipped_slot = NULL.
+   - GET /api/inventory: 200 с items/equipped/capacity; 404 без персонажа.
+   - POST /api/inventory/equip: 200/400.
+   - canEquip: weapon/armor — ok; consumable/ammo/misc — not_equippable.
+   - getEquipped: возвращает только надетые.
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ реализуй: магазин, NPC, бой, WebSocket, крафт, износ, продажу.
+- НЕ добавляй таблиц, кроме inventory.
+- НЕ трогай schemas/, loader.ts, данные, /api/world, /api/character (кроме backfill starter kit в character.ts).
+- НЕ хардкодь строки — только i18n.
+- Вес: считаем usedWeight (сумма weight × qty надетых + в рюкзаке) и maxWeight = 1000 × STR (упрощение; реальная формула TZ — v0.2). maxSlots = 20.
+- Не блокируй экипировку по весу в MVP — только отображай.
+
+КРИТЕРИЙ ПРИЁМКИ 4b:
+1. npm run dev — таблица inventory создана.
+2. Создание персонажа: сразу надет rusty_pipe, надет leather_jacket, medkit ×2 в рюкзаке.
+3. Экран персонажа: блок «Экипировка» с текущими слотами + кнопка «Инвентарь».
+4. Экран инвентаря: список предметов + слоты + панель деталей.
+5. Надеть medkit → 400 not_equippable (кнопка disabled с тултипом).
+6. Надеть предмет с requirements {level: 5} на 1 ур. → 400 requirements_not_met, тултип с "Нужен уровень 5 (у вас 1)".
+7. Снять rusty_pipe → слот пуст, кнопка [Снять] → [Надеть].
+8. Перезагрузка — инвентарь сохранился.
+9. RU/EN — все тексты меняются, включая тултипы.
+10. npm test — все зелёные (минимум 8 новых).
+11. validate-data / validate-i18n / tsc --noEmit — зелёные.
+12. Этапы 1–3 не сломаны (карта, локации, персонаж работают).
+
+Начни с дерева файлов и inventory в schema.sql.

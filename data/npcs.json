@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "npcs": [
+    {
+      "id": "koval",
+      "nameKey": "npc.koval.name",
+      "locationId": "zarya",
+      "role": "blacksmith",
+      "dialogueKeys": ["npc.koval.line.1", "npc.koval.line.2", "npc.koval.line.3", "npc.koval.line.4", "npc.koval.line.5"],
+      "rumorKeys": ["npc.koval.rumor.1"]
+    },
+    {
+      "id": "vera",
+      "nameKey": "npc.vera.name",
+      "locationId": "zarya",
+      "role": "medic",
+      "dialogueKeys": ["npc.vera.line.1", "npc.vera.line.2", "npc.vera.line.3", "npc.vera.line.4", "npc.vera.line.5", "npc.vera.line.6"],
+      "rumorKeys": ["npc.vera.rumor.1", "npc.vera.rumor.2"]
+    },
+    {
+      "id": "molchun",
+      "nameKey": "npc.molchun.name",
+      "locationId": "pepel",
+      "role": "miner",
+      "dialogueKeys": ["npc.molchun.line.1", "npc.molchun.line.2", "npc.molchun.line.3", "npc.molchun.line.4", "npc.molchun.line.5"],
+      "rumorKeys": ["npc.molchun.rumor.1"]
+    }
+  ]
+}

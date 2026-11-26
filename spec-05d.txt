@@ -1,0 +1,295 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 5d из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — действия в бою: applyAction (move/shoot/stance/reload/useItem/flee/endTurn), списание ОД, конец раунда, API для действий, клиентская панель действий. ТОЛЬКО ЭТО. НЕ реализуй AI мобов (5e), WebSocket (6), полноценный экран боя с цветным логом и анимациями (6).
+
+ЭТАПЫ 1–5c СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log).
+- BattleStateSchema (server/game/battle/state.ts): Participant { id, kind, refId, stats{str,agi,int,end,per,intel}, hp, hpMax, ap, apMax, hex{q,r}, position('stand'|'crouch'|'run'|'cover'), facing, equipment{weaponId, armor{head,torso,arms,legs}}, effects[], mobLevel?, mobNameKey?, characterName? }, Obstacle, BattleMap, BattleLogEntry { round, actor, type('hit'|'miss'|'crit'|'info'|'system'|'flee'|'death'|'heal'), text, createdAt }, BattleContext { locationId, isAmbush, cover, timeOfDay }, healLimit { current, max, regenPerRound }, turnOrder, currentActorId, phase('player_turn'|'enemy_turn'|'finished'), status('active'|'victory'|'defeat'|'fled'), log.
+- server/game/battle/formulas.ts: hitChance, rollDamage, rollCrit, applyCrit, armorAbsorb, damageAfterArmor, rollPenetration, damageWithPenetration, damageOutsideRange, xpForKill, xpToNextLevel, applyLevelUp. Инъекция RNG.
+- server/game/battle/hex.ts: hexDistance, hexNeighbors, hexEquals, hexToPixel, pixelToHex, hexKey.
+- server/game/battle/los.ts: hasLineOfSight, canMoveTo, reachableHexes.
+- server/db/battle-repo.ts: createBattle, getBattle, updateBattleState, appendLog, getActiveBattleForCharacter, markFinished.
+- server/api/battle.ts: POST /api/battle/start, GET /api/battle/:id, GET /api/battle/active.
+- data/config/battle.json: hit (clampMin/Max, zoneMods, positionMods, coverBonus, pointBlankHexes), damage (critChanceBase, critChancePerIntel, critMultiplier, minDamage), armor, penetration, distance, xp, healLimit.
+- data/level_table.json: уровни 1–10 со статами, apMax, hpMax.
+- client/js/battle/hex-render.js: hexRender(container, { map, participants, highlight, onHexClick, onHexHover, hexSize }).
+- client/js/screens/battle-map.js: renderBattleMap — только рендер, polling 2с.
+- characters: id=1, 6 статов, hp_current, hp_max, ap_max.
+- inventory: equipped_slot (маппинг jacket→torso, boots→legs).
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono. min-width 1280px.
+- Все строки — только i18n.
+
+ЗАДАЧА 5d — ТОЛЬКО действия.
+
+1. ТИПЫ ДЕЙСТВИЙ (server/game/battle/actions.ts — новый файл):
+
+type ActionType = 'move' | 'shoot' | 'setStance' | 'reload' | 'useItem' | 'flee' | 'endTurn' | 'aim';
+
+type Action =
+  | { type: 'move'; to: HexCoord }
+  | { type: 'shoot'; targetId: string; zone: 'head'|'torso'|'arms'|'legs' }
+  | { type: 'setStance'; stance: 'stand'|'crouch'|'run'|'cover' }
+  | { type: 'reload' }
+  | { type: 'useItem'; itemId: string; inventoryId: number }
+  | { type: 'flee' }
+  | { type: 'endTurn' }
+  | { type: 'aim' };  // +15% к следующему выстрелу (effect 'aim' ttl 1)
+
+Zod-схемы для каждого Action (ActionSchema как discriminatedUnion).
+
+// Результат
+type ActionResult = {
+  ok: true;
+  newState: BattleState;
+  logEntries: BattleLogEntry[];  // новые записи
+} | {
+  ok: false;
+  error: 'not_your_turn' | 'battle_finished' | 'not_enough_ap' | 'invalid_target'
+        | 'out_of_range' | 'no_line_of_sight' | 'no_weapon' | 'no_ammo'
+        | 'occupied' | 'out_of_bounds' | 'blocked' | 'not_adjacent'
+        | 'cannot_flee' | 'invalid_stance' | 'not_equipped' | 'unknown_item'
+        | 'requirements_not_met' | 'cover_not_available' | 'run_not_available';
+  message?: string;  // для лога (i18n на сервере)
+};
+
+2. СТОИМОСТЬ ДЕЙСТВИЙ (в battleConfig, добавить секцию "apCosts"):
+{
+  "apCosts": {
+    "moveStand": 4,
+    "moveCrouch": 4,
+    "moveRun": 2,
+    "setStanceStandCrouch": 3,
+    "setStanceCover": 3,
+    "setStanceRunEnter": 0,
+    "setStanceRunExit": 0,
+    "aim": 5,
+    "shootLight": 8,
+    "shootMedium": 10,
+    "shootHeavy": 15,
+    "shootSniper": 18,
+    "shootMelee": 8,
+    "reloadLight": 5,
+    "reloadMedium": 5,
+    "reloadHeavy": 7,
+    "reloadSniper": 6,
+    "useItem": 8,
+    "flee": 0
+  }
+}
+  - shootXxx выбирается по weaponCategory (light/medium/heavy/sniper/melee).
+  - setStanceRunEnter/Exit = 0 (вход/выход из run бесплатен, как в спеке).
+
+3. ДВИЖОК ДЕЙСТВИЙ (server/game/battle/engine.ts — новый файл):
+
+applyAction(params: {
+  state: BattleState;
+  action: Action;
+  config: BattleConfig;       // gameData.battleConfig
+  items: Item[];              // gameData.items
+  mobs: Mob[];                // gameData.mobs
+  rng: () => number;
+  lang: 'ru'|'en';
+}): ActionResult
+
+  // Иммутабельно: НЕ мутировать state, создавать новые объекты (structuredClone в начале, потом менять копию).
+  // Валидация — до применения. Если ошибка — вернуть { ok: false, error }.
+  // Лог — append-only: logEntries = [...] (новые записи, не весь лог).
+
+Валидация общая:
+  - state.status !== 'active' → battle_finished
+  - state.currentActorId !== 'player' → not_your_turn
+  - if action.type === 'endTurn' — разрешено всегда (даже с ОД)
+
+Действие 'move' { to }:
+  - Проверить canMoveTo({ from: player.hex, to, obstacles: state.map.obstacles, occupiedHexes: [все участники кроме player], mapWidth, mapHeight })
+    * not_adjacent / occupied / out_of_bounds / blocked — вернуть соответствующий error
+  - apCost = position === 'run' ? moveRun : (position === 'crouch' ? moveCrouch : moveStand)
+  - Если player.ap < apCost → not_enough_ap
+  - player.ap -= apCost; player.hex = to
+  - log: type 'info', текст: "Вы перемещаетесь на гекс (q,r)" / "You move to hex (q,r)"
+
+Действие 'shoot' { targetId, zone }:
+  - Найти цель в participants по id. Не игрок → invalid_target. Мёртвая (hp <= 0) → invalid_target.
+  - У игрока должно быть оружие (weaponId !== null) → no_weapon
+  - Оружие существует в items → unknown_item
+  - Если оружие имеет charges и они 0 → no_ammo (нужна перезарядка)
+  - distance = hexDistance(player.hex, target.hex)
+  - Если distance > weapon.range → out_of_range (можно стрелять только в пределах range; вне range — только урон режется, но в 5d запрещаем выстрел за range для простоты; в 5e/6 можно разрешить)
+  - hasLineOfSight(player.hex, target.hex, obstacles) → false → no_line_of_sight
+  - apCost = apCosts['shoot' + weaponCategory]
+  - Если player.ap < apCost → not_enough_ap
+  - Применить формулы:
+    * hitParams = hitChance({ perAttacker: player.stats.per, agiTarget: target.stats.agi, zone, distanceHexes: distance, weapon: { range, spread, sniper }, positionAttacker: player.position, positionTarget: target.position, coverTarget: target.position === 'cover', config: config.hit })
+    * roll = rng() * 100
+    * if roll >= hitParams.chance → промах:
+        log: type 'miss', текст: t('battle.miss', lang, { target: mobName })
+        НЕ списывать патрон? — списывать (выстрел был)
+    * else:
+        baseDmg = rollDamage({ weaponDamage: weapon.damage, ammoBonus: 0, rng })
+        // crit
+        crit = rollCrit({ intel: player.stats.intel, config: config.damage, rng })
+        if crit → baseDmg = applyCrit(baseDmg, config.damage)
+        // armor
+        const armorId = target.equipment.armor[zone === 'head' ? 'head' : zone === 'torso' ? 'torso' : zone === 'arms' ? 'arms' : 'legs']
+        const armorItem = items.find(i => i.id === armorId)
+        const armorValue = armorItem?.armor?.[zone] ?? 0
+        const absorb = armorAbsorb({ armorValue, weaponLevel: weapon.level, config: config.armor })
+        // penetration
+        const penetrated = rollPenetration({ pen: weapon.pen, rng })
+        const finalDmg = damageWithPenetration({ baseDamage: baseDmg, absorb, penetrated, config: config.penetration })
+        target.hp = max(0, target.hp - finalDmg)
+        log: type crit ? 'crit' : 'hit', текст с { target, dmg, zone }
+        Если target.hp === 0 → type 'death' дополнительно, status = 'victory' если все мобы мертвы
+    * player.ap -= apCost
+    * Если weapon.charges !== undefined → weapon.charges -= 1 (это в state; или в inventory? — в state, чтобы не мутировать БД во время боя; синхронизация — после боя)
+  - ВАЖНО: списание патронов — в Participant.equipment.weaponCharges (добавить поле в ParticipantSchema: weaponCharges?: number). После боя — синхронизировать с inventory (это этап 6).
+
+Действие 'setStance' { stance }:
+  - Валидация: stance in ('stand','crouch','run','cover')
+  - cover доступен, только если игрок стоит на гексе, у которого есть сосед с blocksLos: true или blocksMove: true (стена/камень/дерево/ящик). Иначе → cover_not_available.
+  - run доступен, если player.ap >= moveRun (нужно будет двигаться; если ОД 0 — можно, но не сдвинется; упрощение: разрешаем)
+  - apCost: stand↔crouch = 3; →cover = 3; →run = 0; run→любая = 0
+  - player.ap -= apCost; player.position = stance
+  - log: type 'info'
+
+Действие 'aim':
+  - apCost = 5
+  - player.ap -= 5
+  - player.effects.push({ id: 'aim', kind: 'buff', ttlRounds: 1, payload: { hitBonus: 15 } })
+  - log: type 'info', "Вы прицеливаетесь"
+
+Действие 'reload':
+  - У игрока есть оружие с charges → no_weapon
+  - weapon.charges < weapon.maxCharges? — в 5d: charges = maxCharges (из items.json — добавить поле maxCharges? или использовать charges как max). Проще: charges = items[weaponId].charges (полный магазин).
+  - Проверить, есть ли патроны в инвентаре: inventory.equipped? — нет, патроны в рюкзаке. Нужно проверить inventory на ammoType. Но 5d не работает с inventory (это 6). Упрощение: в 5d перезарядка ВСЕГДА успешна, списывает патроны «из воздуха» (в 6 — из инвентаря). Логировать "Вы перезаряжаете {weapon}".
+  - apCost = reloadXxx по weaponCategory
+  - player.ap -= apCost
+  - player.equipment.weaponCharges = items[weaponId].charges
+  - log: type 'info'
+
+Действие 'useItem' { itemId, inventoryId }:
+  - item = items.find(itemId) → unknown_item
+  - item.type === 'consumable' → иначе not_equipped? — в 5d используем itemId из инвентаря, проверяем через inventory-repo (getInventory). Если нет — unknown_item.
+  - apCost = 8
+  - Если player.ap < apCost → not_enough_ap
+  - item.effect.heal → heal = item.effect.heal; newHp = min(player.hpMax, player.hp + heal); actual = newHp - player.hp; if actual > state.healLimit.current → heal = state.healLimit.current (лимит лечения!)
+  - player.hp += heal; state.healLimit.current -= heal
+  - item.effect.cure → снять effect (если есть)
+  - player.ap -= 8
+  - Удалить 1 шт из инвентаря (вызвать inventory-repo.removeItem — но 5d не должен лезть в БД во время боя; упрощение: списывать после боя; в 5d — списать сразу, потому что клиент будет запрашивать инвентарь)
+  - log: type 'heal', "Вы используете {item}, восстановлено {heal} HP"
+  - Если item.effect.heal === 0 и cure === undefined → ошибка unknown_item
+
+Действие 'flee':
+  - Проверить: player.position !== 'run' → cannot_flee (по TZ бежать можно только в run)
+  - Шанс = 40 + (player.stats.agi - maxAgiМоба) × 2; clamp 10–90
+  - roll = rng() * 100; if roll < chance → status = 'fled', result = 'fled', phase = 'finished'
+  - else → моб получает бонусную атаку (в 5e — AI; в 5d — просто лог "побег не удался")
+  - log: type 'flee' или 'info'
+
+Действие 'endTurn':
+  - phase = 'enemy_turn'
+  - turnOrder: перейти к следующему. Если игрок был последним — новый раунд:
+    * round += 1
+    * healLimit.current = min(healLimit.max, healLimit.current + healLimit.regenPerRound)
+    * ap игрока = ap_max (восстановление ОД)
+    * ap мобов = ap_max (в 5e — AI; в 5d — просто восстановить, если мобы)
+    * decrement ttlRounds всех effects; удалить с ttl <= 0
+    * phase = 'player_turn' (или 'enemy_turn', если в turnOrder первый — не игрок; в 5d — игрок всегда первый, поэтому 'player_turn')
+  - log: type 'system', "--- Раунд {n} ---"
+  - ВАЖНО: если все мобы мертвы → status = 'victory', phase = 'finished', result = 'victory'. Начислить XP: xp = sum(xpForKill за каждого моба); player.xp += xp; levelup через applyLevelUp если xp >= xpToNextLevel.
+  - Если игрок мёртв → status = 'defeat', phase = 'finished', result = 'defeat'.
+
+После applyAction:
+  - Пересчитать turnOrder (в 5d — не меняется, игрок первый)
+  - Если status !== 'active' — phase = 'finished'
+  - Вернуть { ok: true, newState, logEntries }
+
+4. API (server/api/battle.ts — доработать):
+  - POST /api/battle/:id/action → body { action: Action, lang: 'ru'|'en' }
+    * Загрузить state, применить applyAction с rng=Math.random, items, mobs, config
+    * Если ok → updateBattleState(newState), appendLog(newState.id, result.logEntries), вернуть { ok: true, state: newState, logEntries }
+    * Если error → 400 { ok: false, error, message? }
+    * 404 если бой не найден; 409 если battle.status !== 'active'
+  - GET /api/battle/:id — как было.
+  - GET /api/battle/:id/reachable?from=q,r — вернуть reachableHexes для подсветки движения (использует canMoveTo + apCost).
+    * Упрощение: GET /api/battle/:id/highlight?action=move|shoot&targetId=<id> → { reachable?: string[], los?: string[] }
+    * Для move: reachableHexes({ from: player.hex, maxSteps: floor(player.ap / moveCost), ... })
+    * Для shoot: гексы, куда есть LOS от player.hex в пределах range — можно отдать только los (без zone) или пустой (zone выбирается на клиенте)
+  - ВАЖНО: если state.status !== 'active' — applyAction возвращает ошибку battle_finished, API → 409.
+
+5. КЛИЕНТ (client/js/screens/battle-map.js — доработать):
+  - Polling каждые 1с (вместо 2с) — GET /api/battle/:id
+  - Панель действий (снизу):
+    * [ОД: 21/21] [Поза: стоя]
+    * Кнопки: [Движение] [Выстрел] [Прицел] [Смена позы] [Перезарядка] [Аптечка] [Бежать] [Завершить ход]
+    * Кнопки disabled, если action невозможен (нет ОД, нет оружия, не твой ход).
+  - Режимы:
+    * 'idle' — ничего не выбрано, карта только показывает hover
+    * 'move' — подсвечены reachableHexes (зелёным), клик по гексу → POST action move
+    * 'shoot' — подсвечены гексы с LOS (синим), клик по мобу → выбор зоны (мини-панель: [Голова] [Торс] [Руки] [Ноги]) → POST action shoot
+  - Кнопка «Сменить позу» — циклический выбор (stand → crouch → cover → run → stand), disabled если cover недоступен (нужен серверный флаг, GET /api/battle/:id даёт position; клиент сам не может — пусть сервер валидирует и вернёт cover_not_available, клиент покажет ошибку)
+  - После действия: обновить state, лог, перерисовать карту (через hexRender.update)
+  - Кнопка «Завершить ход» → POST endTurn
+  - Лог: только чтение (20 последних записей, прокрутка), цвет по type (hit — белый, miss — серый, crit — жёлтый, info — синий, system — синий, death — красный, heal — зелёный)
+
+6. ТЕСТЫ (Vitest, server/game/battle/__tests__/engine.test.ts) — минимум 20:
+
+  - move: успех — игрок сдвинулся, ОД −4, лог +1
+  - move: не хватает ОД (ap=2) → not_enough_ap
+  - move: не сосед → not_adjacent
+  - move: гекс занят → occupied
+  - shoot: успех — hp моба уменьшился, патрон −1, лог +1 (hit или miss, RNG фиксирован)
+  - shoot: не хватает ОД → not_enough_ap
+  - shoot: без оружия → no_weapon
+  - shoot: без патронов → no_ammo
+  - shoot: нет LOS → no_line_of_sight
+  - shoot: за range → out_of_range
+  - shoot: kill — status = 'victory', phase = 'finished', result = 'victory', XP начислен
+  - shoot: crit (RNG) — урон × 1.5
+  - setStance: run→stand — 0 ОД
+  - setStance: →cover на гексе без препятствия → cover_not_available
+  - aim: +5 ОД, effect aim добавлен, следующий shoot с +15% (проверить через hitChance)
+  - reload: charges восстановлены, ОД −5
+  - useItem: heal 20, healLimit.current уменьшился на 20 (не больше текущего)
+  - useItem: healLimit.current = 0 → heal = 0, но ОД −8, лог «организм не воспринимает»
+  - endTurn: phase = 'enemy_turn', если все мобы мертвы — victory
+  - endTurn в конце раунда: round += 1, healLimit.current += regenPerRound (clamp max), ap = ap_max
+  - Двойной endTurn: второй — ошибка battle_finished? — нет, если phase = 'player_turn' снова, но в 5d без AI ход моба ничего не делает — тогда сразу вернуть phase 'player_turn' с логом "--- Раунд 2 ---"
+  - flee: успех — status = 'fled'
+  - flee: не в run → cannot_flee
+  - Валидация: действие от моба (currentActorId != 'player') → not_your_turn
+
+7. ДОБАВИТЬ В ParticipantSchema:
+  - weaponCharges?: number (текущие патроны в стволе; max — из items.json)
+
+8. i18n — новые ключи (RU + EN):
+  - battle.action.move, .shoot, .aim, .stance, .reload, .item, .flee, .endTurn
+  - battle.error.not_enough_ap, .no_weapon, .no_ammo, .no_line_of_sight, .out_of_range, .occupied, .not_adjacent, .blocked, .not_your_turn, .battle_finished, .cover_not_available, .cannot_flee, .invalid_target
+  - battle.log.move ({q},{r}), .shoot_hit ({target},{dmg},{zone}), .shoot_miss ({target}), .shoot_crit ({target},{dmg},{zone}), .shoot_death ({target}), .aim, .stance_change ({stance}), .reload ({weapon}), .heal ({item},{hp}), .heal_limit_exceeded, .round_start ({n}), .victory, .defeat, .flee_success, .flee_fail
+  - ui.battle.ap ({cur},{max}), .position.stand, .position.crouch, .position.run, .position.cover, .zone.head, .zone.torso, .zone.arms, .zone.legs, .button.move, .button.shoot, .button.aim, .button.stance, .button.reload, .button.item, .button.flee, .button.endTurn, .button.close
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ реализуй: AI мобов (5e), WebSocket (6), цветной лог с анимациями (6), синхронизацию патронов/аптечек с inventory после боя (6), движение мобов (5e).
+- НЕ добавляй таблиц БД.
+- НЕ меняй BattleState-схему (кроме weaponCharges опционально).
+- НЕ меняй формулы, hex, los.
+- НЕ трогай schemas/{items,mobs,world}.ts.
+- НЕ хардкодь строки — только i18n.
+- Если сомневаешься — README → Backlog.
+
+КРИТЕРИЙ ПРИЁМКИ 5d:
+1. npm run dev — сервер стартует.
+2. Начать бой (POST /api/battle/start { mobIds: ["pipe_rat"] }).
+3. Экран карты: панель действий внизу.
+4. [Движение] → подсветка зелёным → клик по гексу → игрок сдвинулся, ОД −4, лог +1.
+5. [Выстрел] → подсветка синим → клик по грызуну → выбор зоны → [Торс] → выстрел → HP грызуна уменьшился, патрон −1, лог.
+6. Убить грызуна → status victory, лог "Победа", XP начислен.
+7. [Завершить ход] → раунд 2, ОД восстановлены, лимит лечения +13.
+8. [Аптечка] → лечит (не больше лимита лечения), лог.
+9. [Прицел] → ОД −5, следующий выстрел точнее (визуально — в логе).
+10. [Смена позы] → stand → run → ОД −0, затем move — ОД −2.
+11. [Бежать] вне run → cannot_flee.
+12. npm test — все зелёные (минимум 20 новых).
+13. tsc --noEmit чисто.
+14. Этапы 1–5c не сломаны.
+
+Начни с server/game/battle/actions.ts и engine.ts.

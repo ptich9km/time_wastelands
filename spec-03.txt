@@ -1,0 +1,135 @@
+Ты — senior full-stack разработчик. Реализуй ЭТАП 3 из ТЗ игры «Пустошь: Ржавый Предел» — локальной браузерной постапокалиптической RPG (2D, DOM + SVG, без 3D).
+
+ЭТАПЫ 1 И 2 СДЕЛАНЫ. Не переделывай их. Вот что есть:
+- Fastify :3000, статика client/.
+- SQLite (better-sqlite3, WAL). Таблицы: meta, characters (id=1, 6 статов, "end" в кавычках, hp_max=50+5×"end", ap_max=15+2×"end", location_id).
+- server/schemas/loader.ts → loadGameData() → fastify.gameData = { world, items, mobs, phrases, i18n }. Валидация Zod + кросс-валидация, при ошибке — сервер не стартует.
+- server/i18n/index.ts → t(key, lang, params). fastify.i18n = { ru, en }, 224 ключа.
+- server/game/entities/character.ts: createCharacter(db, {name}), getCharacter(db).
+- server/db/character-repo.ts: getCharacter, insertCharacter, updateCharacter.
+- server/api/character.ts: GET /api/character, POST /api/character. Зарегистрировано в index.ts.
+- Клиент: client/index.html, js/main.js (оркестратор: GET /api/character → 404 → create, 200 → character), js/api.js, js/i18n.js, js/screens/character-create.js, js/screens/character.js. Переключатель RU/EN.
+- Стиль: фон #1a1614, панели #2a2420, границы #3a322c, текст #d4c9b8, акцент #c9a227, опасность #a83232. Inter + JetBrains Mono. min-width 1280px.
+- Все строки — только через i18n-ключи. Хардкод запрещён.
+
+ЗАДАЧА ЭТАПА 3 — карта мира, туман войны, экран локации, переходы. ТОЛЬКО ЭТО. Не делай бой, инвентарь, магазин, WebSocket, NPC. Не добавляй таблиц, кроме world_state.
+
+КОНТЕКСТ СЕТТИНГА (не влияет на код, только на тексты):
+«Серая Гниль» — биокатастрофа на Урале. Города-оазисы, пустоши, шахты, руины. Тон — постсоветская тоска с чёрным юмором. Игрок стартует в «Заре» (город).
+
+1. СХЕМА БД (добавь в server/db/schema.sql, CREATE TABLE IF NOT EXISTS):
+   world_state (
+     location_id TEXT PRIMARY KEY,
+     respawn_at TEXT NOT NULL,          -- ISO datetime, когда на локации появятся мобы
+     last_visited_at TEXT,              -- NULL = ещё не открыта (туман войны)
+     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+   )
+   -- world_state заполняется лениво: при первом посещении локации создаётся строка.
+   -- Для тумана войны: локация "открыта", если есть строка с last_visited_at IS NOT NULL
+   -- ИЛИ если она соседняя с уже открытой (открываем соседей при посещении).
+
+2. РЕПОЗИТОРИЙ (server/db/world-repo.ts):
+   - getWorldState(db, locationId) → { locationId, respawnAt, lastVisitedAt } | null
+   - markVisited(db, locationId) → upsert: last_visited_at = now, обновить updated_at
+   - openNeighbors(db, locationId, world) → для каждой соседней локации: если строки нет — создать с last_visited_at = NULL (это «открытая, но не посещённая» — видна на карте, но не активирует спавн)
+   - getVisibleLocations(db, world, characterLocationId) → Set<string> id локаций, которые видны на карте:
+     * текущая локация — всегда
+     * все соседи текущей — всегда
+     * все локации, у которых last_visited_at IS NOT NULL — всегда
+   - ВАЖНО: world_state не должна содержать «мёртвых» строк для локаций, которых нет в world.json. Если world.json изменился (удалили локацию) — при старте сервера удалить лишние строки (cleanup).
+
+3. ПЕРЕХОДЫ (server/game/world/travel.ts — новый файл):
+   - canTravel(world, character, targetId) → { ok: true } | { ok: false, error: 'not_adjacent' | 'no_connection' | 'unknown_location' }
+     * targetId существует в world.json
+     * между location_id и targetId есть связь в connections (двусторонняя — проверить обе стороны)
+   - getTravelOptions(world, character, targetId) → { distance, baseTimeMs, type: 'plain' | 'road', canQuick: boolean }
+     * baseTimeMs: 1500ms (plain) / 900ms (road) — короткие переходы из M19.
+     * canQuick: true, если у targetId уже есть last_visited_at IS NOT NULL.
+   - ВАЖНО: encounters и «путь в 3–10 секунд» — это этап 7. На этапе 3 переход МГНОВЕННЫЙ: POST → обновить location_id → вернуть новое состояние. baseTimeMs — только для клиентской анимации (прогресс-бар «В пути…»), не блокирует сервер.
+
+4. REST API (server/api/world.ts — новый файл, регистрируется в index.ts):
+   - GET /api/world → { locations: [...], visible: [...], current: locationId }
+     * locations: все локации из world.json в виде { id, type, nameKey, coords, dangerLevel, levelRange, connections: [{to, type}], isVisible: boolean, isVisited: boolean }
+     * НЕ отдавать descriptionKey, ambientKeys, art, spawnTable — это этап «экран локации» отдаст по конкретной локации.
+     * visible: массив id
+     * current: текущая локация персонажа
+   - GET /api/location/:id → { id, type, nameKey, descriptionKey, ambientKeys, coords, dangerLevel, levelRange, connections, isCurrent: boolean, isVisited: boolean }
+     * 404, если локации нет в world.json
+     * 403, если локация не видима (не в visible)
+     * ambients: сервер выбирает 2–3 случайные фразы из ambientKeys и отдаёт как { ambientKeys: [...] } — клиент сам переводит через i18n
+   - POST /api/travel → body { to: locationId }
+     * 400 { error: 'not_adjacent' | 'no_connection' | 'unknown_location' | 'no_character' }
+     * 200 { character, fromLocationId, toLocationId }
+     * Обновляет characters.location_id, markVisited(toLocationId), openNeighbors(toLocationId, world)
+     * Валидация: character существует
+     * НЕ запускает encounter (этап 7)
+   - Все ответы — JSON, Content-Type application/json.
+
+5. КЛИЕНТ:
+   - client/js/screens/map.js — экран карты мира:
+     * SVG 20×20 или CSS-grid — выбери сам, но гексы/квадраты 36×36, умещаются на 1280px.
+     * Текущая позиция — пульсирующая рамка.
+     * Видимые локации: иконка по type (🏙️ city, 🌫️ waste, 🏚️ ruins, ⛏️ mine, 🛤️ road, 🏕️ camp) + тултип с nameKey (через i18n).
+     * Невидимые (туман) — серый #2a2420 без иконки, без тултипа.
+     * Клик по видимой соседней локации → POST /api/travel → при 200 перерисовать карту + переключить на экран локации (screens/location.js). При ошибке — показать inline-сообщение (i18n).
+     * Клик по текущей — переключить на экран локации без запроса.
+     * Кнопки [RU]/[EN] в углу (уже есть в main.js — использовать).
+     * Кнопка «Персонаж» → screens/character.js.
+   - client/js/screens/location.js — экран локации:
+     * Название локации (nameKey → i18n).
+     * Тип локации (type → i18n: ui.location.type.city и т.д.).
+     * Описание (descriptionKey → i18n).
+     * 2–3 атмосферные фразы (ambientKeys → i18n, сервер уже выбрал).
+     * Список связей: каждая — кнопка с названием соседней локации + иконка. Клик → POST /api/travel.
+     * Кнопка «Карта мира» → screens/map.js.
+     * Кнопка «Персонаж» → screens/character.js.
+     * Если локация не видима — не показывать (это защита; кнопка не должна быть доступна).
+   - client/js/main.js — добавить роутинг экранов:
+     * 'character' | 'map' | 'location' (с параметром locationId)
+     * GET /api/character при загрузке → 404 → 'create', 200 → 'character'
+     * Из character.js — кнопка «Карта мира» → 'map'
+     * Из map.js — клик → POST /api/travel → 'location' (toLocationId)
+     * Из location.js — «Карта мира» → 'map'
+     * Смена языка — перерисовать текущий экран (сохранять текущее состояние: для location — id)
+   - client/js/api.js — добавить:
+     * getWorld()
+     * getLocation(id)
+     * travel(to)
+   - CSS — новые классы: .map-grid, .map-hex, .map-hex.visible, .map-hex.fog, .map-hex.current, .location-screen, .location-desc, .location-ambient, .location-connections, .travel-progress. Стиль — по гайду.
+   - i18n-ключи (RU + EN):
+     * ui.map.title, ui.map.tooltip ({name}, {level}, {danger}), ui.map.fog, ui.map.error.not_adjacent, ui.map.error.no_connection, ui.map.error.no_character, ui.map.error.unknown_location, ui.map.button.character, ui.map.button.location
+     * ui.location.title, ui.location.type.city, ui.location.type.waste, ui.location.type.ruins, ui.location.type.mine, ui.location.type.road, ui.location.type.camp, ui.location.danger ({level}), ui.location.connections, ui.location.button.map, ui.location.button.character, ui.location.current
+     * ui.travel.progress ({name})
+   - Важно: иконки локаций — эмодзи. Хардкод эмодзи в JS — можно (это не текст, это графика). Но названия — только через i18n.
+
+6. ТЕСТЫ (Vitest, in-memory SQLite):
+   - canTravel: сосед по connection → ok; не сосед → not_adjacent; несуществующий id → unknown_location; асимметричная связь → no_connection (на тестовом world.json).
+   - getTravelOptions: road → 900ms, plain → 1500ms; canQuick = false для непосещённой, true для посещённой.
+   - openNeighbors: после markVisited('zarya') — все соседи zarya имеют строку в world_state с last_visited_at = NULL.
+   - getVisibleLocations: стартовая локация видна; соседи — видны; дальние — нет; после посещения — видны.
+   - POST /api/travel: успех обновляет characters.location_id и world_state.
+   - GET /api/location/:id: 403 для невидимой, 404 для несуществующей, 200 для видимой.
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ реализуй: бой, encounter, спавн, инвентарь, магазин, NPC, WebSocket, время суток, погоду.
+- НЕ добавляй таблиц, кроме world_state.
+- НЕ меняй characters (только UPDATE location_id).
+- НЕ трогай schemas/, loader.ts, i18n/ (кроме добавления ключей).
+- НЕ хардкодь названия локаций — только i18n.
+- НЕ отдавай клиенту descriptionKey/ambientKeys/art/spawnTable в /api/world (только по /api/location/:id).
+- Если сомневаешься — в README → Backlog.
+
+КРИТЕРИЙ ПРИЁМКИ ЭТАПА 3:
+1. npm run dev — сервер стартует, world_state создана.
+2. Экран персонажа: кнопка «Карта мира» → открывается карта 20×20.
+3. На карте: текущая «Заря» (пульсирует), сосед «Пепельная дорога» виден (не туман), остальные — туман.
+4. Клик по «Пепельная дорога» → POST /api/travel → переход → экран локации «Пепельная дорога»: название, тип, описание, 2–3 фразы, список связей (Заря, Старый перекрёсток, Сосновый кордон), кнопки «Карта мира», «Персонаж».
+5. На карте после перехода: «Пепельная дорога» — текущая; «Заря», «Старый перекрёсток», «Сосновый кордон» — видимы (туман снят); остальные — туман.
+6. Переход в «Пепел» (2 шага: Заря → Пепельная дорога → Старый перекрёсток → Пепел) — работает, каждый шаг обновляет локацию.
+7. GET /api/location/несуществующий → 404; GET /api/location/невидимый (например, "institute_9" на старте) → 403.
+8. Переключение RU/EN на карте и экране локации — все тексты меняются (иконки-эмодзи остаются).
+9. npm test — все зелёные (минимум 6 новых).
+10. npm run validate-data && npm run validate-i18n — без ошибок.
+11. README обновлён.
+
+Начни с дерева файлов и world_state в schema.sql.

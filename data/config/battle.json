@@ -1,0 +1,96 @@
+{
+  "hit": {
+    "clampMin": 5,
+    "clampMax": 95,
+    "zoneMods": { "torso": 1.0, "arms": 0.9, "legs": 0.8, "head": 0.6 },
+    "zoneModsIfPerAboveAgi": 1.0,
+    "positionMods": {
+      "stand": { "enemyPenalty": 0, "selfPenalty": 0, "dodge": 0 },
+      "crouch": { "enemyPenalty": 0, "selfPenalty": 0, "dodge": 0 },
+      "run": { "enemyPenalty": -30, "selfPenalty": -20, "dodge": 20 },
+      "cover": { "enemyPenalty": -30, "selfPenalty": -10, "dodge": 40 }
+    },
+    "coverBonus": -30,
+    "pointBlankHexes": 1
+  },
+  "damage": {
+    "critChanceBase": 5,
+    "critChancePerIntel": 0.5,
+    "critMultiplier": 1.5,
+    "minDamage": 1
+  },
+  "armor": {
+    "formulaAbove6": { "mult50": 50, "coef": 20, "offset": 80 },
+    "formulaUpTo6": { "cap": 80, "mult50": 50 },
+    "maxAbsorb": 80
+  },
+  "penetration": {
+    "fullDamageBelow": 40,
+    "linearFrom": 40,
+    "linearTo": 70,
+    "ignoredAbove": 70
+  },
+  "distance": {
+    "outsideRangeDivisor": 2,
+    "sniper": { "pointBlank": 0.1, "plateauAt": 0.7 }
+  },
+  "xp": {
+    "basePerLevel": 600,
+    "perHpBase": 1,
+    "levelDiffMod": 0.1,
+    "levelDiffClampMin": 0.1,
+    "levelDiffClampMax": 5.0
+  },
+  "healLimit": {
+    "startMult": 1.5,
+    "regenPerRoundMult": 0.2
+  },
+  "apCosts": {
+    "moveStand": 4,
+    "moveCrouch": 4,
+    "moveRun": 2,
+    "setStanceStandCrouch": 3,
+    "setStanceCover": 3,
+    "setStanceRunEnter": 0,
+    "setStanceRunExit": 0,
+    "aim": 5,
+    "shootLight": 8,
+    "shootMedium": 10,
+    "shootHeavy": 15,
+    "shootSniper": 18,
+    "shootMelee": 8,
+    "reloadLight": 5,
+    "reloadMedium": 5,
+    "reloadHeavy": 7,
+    "reloadSniper": 6,
+    "useItem": 8,
+    "flee": 0
+  },
+  "ai": {
+    "aggressive": {
+      "approach": true,
+      "stopAtRange": "weapon",
+      "preferZone": "torso",
+      "fleeAtHpPct": 0,
+      "coverAware": false
+    },
+    "coward": {
+      "approach": true,
+      "stopAtRange": "weapon",
+      "preferZone": "torso",
+      "fleeAtHpPct": 30,
+      "coverAware": true,
+      "fleeApThreshold": 4
+    }
+  },
+  "spawn": {
+    "encounterChanceMultiplier": 1.0,
+    "packMin": 3,
+    "packMax": 5,
+    "soloMin": 1,
+    "soloMax": 3,
+    "eliteChance": 0.10,
+    "respawnMinMinutes": 10,
+    "respawnMaxMinutes": 15
+  }
+}

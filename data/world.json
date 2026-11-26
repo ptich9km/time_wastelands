@@ -1,0 +1,376 @@
+{
+  "version": "1.0",
+  "size": { "width": 20, "height": 20 },
+  "startLocationId": "zarya",
+  "locations": [
+    {
+      "id": "zarya",
+      "type": "city",
+      "nameKey": "location.zarya.name",
+      "descriptionKey": "location.zarya.desc",
+      "ambientKeys": [
+        "location.zarya.ambient.1",
+        "location.zarya.ambient.2",
+        "location.zarya.ambient.3"
+      ],
+      "coords": { "x": 5, "y": 5 },
+      "dangerLevel": 0,
+      "levelRange": [1, 5],
+      "connections": [{ "to": "ash_road", "type": "road" }],
+      "spawnTable": [],
+      "cover": false,
+      "shopId": "zarya_shop",
+      "npcIds": ["koval", "vera"],
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "weather": "fog",
+        "silhouettes": [
+          { "type": "tower", "x": 0.18, "y": 0.55, "scale": 1.3, "color": "#0f0c0a" },
+          { "type": "factory", "x": 0.78, "y": 0.5, "scale": 0.9, "color": "#0f0c0a" },
+          { "type": "fence", "x": 0.45, "y": 0.72, "scale": 0.8, "color": "#0f0c0a" }
+        ]
+      }
+    },
+    {
+      "id": "ash_road",
+      "type": "road",
+      "nameKey": "location.ash_road.name",
+      "descriptionKey": "location.ash_road.desc",
+      "ambientKeys": [
+        "location.ash_road.ambient.1",
+        "location.ash_road.ambient.2"
+      ],
+      "coords": { "x": 5, "y": 6 },
+      "dangerLevel": 10,
+      "levelRange": [1, 3],
+      "connections": [
+        { "to": "zarya", "type": "road" },
+        { "to": "old_crossing", "type": "road" },
+        { "to": "pine_guard", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "pipe_rat", "weight": 70, "min": 0, "max": 2 },
+        { "mobId": "ash_dog", "weight": 30, "min": 0, "max": 1 }
+      ],
+      "cover": false,
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "silhouettes": [
+          { "type": "fence", "x": 0.3, "y": 0.7, "scale": 1, "color": "#0f0c0a" },
+          { "type": "rubble", "x": 0.7, "y": 0.8, "scale": 0.6, "color": "#0f0c0a" }
+        ]
+      }
+    },
+    {
+      "id": "old_crossing",
+      "type": "road",
+      "nameKey": "location.old_crossing.name",
+      "descriptionKey": "location.old_crossing.desc",
+      "ambientKeys": [
+        "location.old_crossing.ambient.1",
+        "location.old_crossing.ambient.2"
+      ],
+      "coords": { "x": 5, "y": 7 },
+      "dangerLevel": 15,
+      "levelRange": [1, 3],
+      "connections": [
+        { "to": "ash_road", "type": "road" },
+        { "to": "pepel", "type": "road" },
+        { "to": "waste_edge", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "ash_dog", "weight": 60, "min": 1, "max": 2 },
+        { "mobId": "pipe_rat", "weight": 40, "min": 0, "max": 2 }
+      ],
+      "cover": false,
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "silhouettes": [
+          { "type": "rubble", "x": 0.5, "y": 0.8, "scale": 0.9, "color": "#0f0c0a" }
+        ]
+      }
+    },
+    {
+      "id": "pepel",
+      "type": "city",
+      "nameKey": "location.pepel.name",
+      "descriptionKey": "location.pepel.desc",
+      "ambientKeys": [
+        "location.pepel.ambient.1",
+        "location.pepel.ambient.2",
+        "location.pepel.ambient.3"
+      ],
+      "coords": { "x": 5, "y": 8 },
+      "dangerLevel": 0,
+      "levelRange": [1, 6],
+      "connections": [
+        { "to": "old_crossing", "type": "road" },
+        { "to": "mine_entrance", "type": "road" }
+      ],
+      "spawnTable": [],
+      "cover": false,
+      "shopId": "pepel_shop",
+      "npcIds": ["molchun"],
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "weather": "fog",
+        "silhouettes": [
+          { "type": "tower", "x": 0.25, "y": 0.5, "scale": 1.1, "color": "#0f0c0a" },
+          { "type": "rubble", "x": 0.75, "y": 0.8, "scale": 0.8, "color": "#0f0c0a" }
+        ]
+      }
+    },
+    {
+      "id": "pine_guard",
+      "type": "camp",
+      "nameKey": "location.pine_guard.name",
+      "descriptionKey": "location.pine_guard.desc",
+      "ambientKeys": [
+        "location.pine_guard.ambient.1",
+        "location.pine_guard.ambient.2"
+      ],
+      "coords": { "x": 6, "y": 6 },
+      "dangerLevel": 10,
+      "levelRange": [1, 3],
+      "connections": [
+        { "to": "ash_road", "type": "plain" },
+        { "to": "pine_forest", "type": "plain" },
+        { "to": "waste_edge", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "pipe_rat", "weight": 100, "min": 0, "max": 1 }
+      ],
+      "cover": true,
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "silhouettes": [
+          { "type": "tree", "x": 0.2, "y": 0.6, "scale": 1.1, "color": "#0f0c0a" },
+          { "type": "cover_box", "x": 0.55, "y": 0.75, "scale": 0.8, "color": "#0f0c0a" },
+          { "type": "tree", "x": 0.85, "y": 0.55, "scale": 1, "color": "#0f0c0a" }
+        ]
+      }
+    },
+    {
+      "id": "pine_forest",
+      "type": "waste",
+      "nameKey": "location.pine_forest.name",
+      "descriptionKey": "location.pine_forest.desc",
+      "ambientKeys": [
+        "location.pine_forest.ambient.1",
+        "location.pine_forest.ambient.2",
+        "location.pine_forest.ambient.3"
+      ],
+      "coords": { "x": 7, "y": 6 },
+      "dangerLevel": 25,
+      "levelRange": [1, 3],
+      "connections": [
+        { "to": "pine_guard", "type": "plain" },
+        { "to": "quiet_domes", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "spore_youth", "weight": 50, "min": 1, "max": 1 },
+        { "mobId": "ash_dog", "weight": 50, "min": 0, "max": 2 }
+      ],
+      "cover": true,
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "silhouettes": [
+          { "type": "tree", "x": 0.15, "y": 0.6, "scale": 1.2, "color": "#0f0c0a" },
+          { "type": "tree", "x": 0.45, "y": 0.5, "scale": 1.4, "color": "#0f0c0a" },
+          { "type": "tree", "x": 0.8, "y": 0.6, "scale": 1.1, "color": "#0f0c0a" }
+        ]
+      }
+    },
+    {
+      "id": "quiet_domes",
+      "type": "ruins",
+      "nameKey": "location.quiet_domes.name",
+      "descriptionKey": "location.quiet_domes.desc",
+      "ambientKeys": [
+        "location.quiet_domes.ambient.1",
+        "location.quiet_domes.ambient.2"
+      ],
+      "coords": { "x": 8, "y": 6 },
+      "dangerLevel": 35,
+      "levelRange": [2, 4],
+      "connections": [
+        { "to": "pine_forest", "type": "plain" },
+        { "to": "rotten_hollow", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "rust_digger", "weight": 60, "min": 1, "max": 1 },
+        { "mobId": "spore_youth", "weight": 40, "min": 1, "max": 2 }
+      ],
+      "cover": true,
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "silhouettes": [
+          { "type": "ruin", "x": 0.3, "y": 0.55, "scale": 1.2, "color": "#0f0c0a" },
+          { "type": "cover_box", "x": 0.65, "y": 0.8, "scale": 0.9, "color": "#0f0c0a" }
+        ]
+      }
+    },
+    {
+      "id": "rotten_hollow",
+      "type": "waste",
+      "nameKey": "location.rotten_hollow.name",
+      "descriptionKey": "location.rotten_hollow.desc",
+      "ambientKeys": [
+        "location.rotten_hollow.ambient.1",
+        "location.rotten_hollow.ambient.2"
+      ],
+      "coords": { "x": 9, "y": 6 },
+      "dangerLevel": 40,
+      "levelRange": [2, 4],
+      "connections": [
+        { "to": "quiet_domes", "type": "plain" },
+        { "to": "institute_9", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "spore_youth", "weight": 70, "min": 1, "max": 2 },
+        { "mobId": "rot_walker", "weight": 30, "min": 1, "max": 1 }
+      ],
+      "cover": false,
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "weather": "spore_mist",
+        "silhouettes": [
+          { "type": "mushroom", "x": 0.2, "y": 0.8, "scale": 0.8, "color": "#0f0c0a" },
+          { "type": "mushroom", "x": 0.6, "y": 0.85, "scale": 1.1, "color": "#0f0c0a" },
+          { "type": "anomaly_glow", "x": 0.4, "y": 0.7, "scale": 1, "color": "#3a5a3a" }
+        ]
+      }
+    },
+    {
+      "id": "institute_9",
+      "type": "ruins",
+      "nameKey": "location.institute_9.name",
+      "descriptionKey": "location.institute_9.desc",
+      "ambientKeys": [
+        "location.institute_9.ambient.1",
+        "location.institute_9.ambient.2"
+      ],
+      "coords": { "x": 10, "y": 6 },
+      "dangerLevel": 60,
+      "levelRange": [4, 6],
+      "connections": [
+        { "to": "rotten_hollow", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "rot_walker", "weight": 60, "min": 1, "max": 2 },
+        { "mobId": "rat_elder", "weight": 40, "min": 1, "max": 1 }
+      ],
+      "cover": true,
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "silhouettes": [
+          { "type": "factory", "x": 0.4, "y": 0.5, "scale": 1.3, "color": "#0f0c0a" },
+          { "type": "pipe", "x": 0.75, "y": 0.65, "scale": 1, "color": "#0f0c0a" }
+        ]
+      }
+    },
+    {
+      "id": "mine_entrance",
+      "type": "mine",
+      "nameKey": "location.mine_entrance.name",
+      "descriptionKey": "location.mine_entrance.desc",
+      "ambientKeys": [
+        "location.mine_entrance.ambient.1",
+        "location.mine_entrance.ambient.2",
+        "location.mine_entrance.ambient.3"
+      ],
+      "coords": { "x": 5, "y": 9 },
+      "dangerLevel": 30,
+      "levelRange": [2, 4],
+      "connections": [
+        { "to": "pepel", "type": "road" },
+        { "to": "deep_mine", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "pipe_rat", "weight": 50, "min": 1, "max": 2 },
+        { "mobId": "spore_youth", "weight": 40, "min": 1, "max": 1 },
+        { "mobId": "rat_elder", "weight": 10, "min": 1, "max": 1 }
+      ],
+      "cover": true,
+      "art": {
+        "sky": ["#1a1614", "#0f0c0a"],
+        "ground": "#0f0c0a",
+        "silhouettes": [
+          { "type": "cave", "x": 0.5, "y": 0.6, "scale": 1.4, "color": "#000000" },
+          { "type": "cover_box", "x": 0.3, "y": 0.85, "scale": 0.8, "color": "#000000" }
+        ]
+      }
+    },
+    {
+      "id": "deep_mine",
+      "type": "mine",
+      "nameKey": "location.deep_mine.name",
+      "descriptionKey": "location.deep_mine.desc",
+      "ambientKeys": [
+        "location.deep_mine.ambient.1",
+        "location.deep_mine.ambient.2"
+      ],
+      "coords": { "x": 5, "y": 10 },
+      "dangerLevel": 55,
+      "levelRange": [3, 5],
+      "connections": [
+        { "to": "mine_entrance", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "rat_elder", "weight": 40, "min": 1, "max": 1 },
+        { "mobId": "rot_walker", "weight": 60, "min": 1, "max": 2 }
+      ],
+      "cover": true,
+      "anomaly": "spore_low",
+      "art": {
+        "sky": ["#0f0c0a", "#050403"],
+        "ground": "#050403",
+        "silhouettes": [
+          { "type": "cave", "x": 0.5, "y": 0.5, "scale": 1.6, "color": "#000000" },
+          { "type": "anomaly_glow", "x": 0.6, "y": 0.75, "scale": 1, "color": "#3a5a3a" }
+        ]
+      }
+    },
+    {
+      "id": "waste_edge",
+      "type": "waste",
+      "nameKey": "location.waste_edge.name",
+      "descriptionKey": "location.waste_edge.desc",
+      "ambientKeys": [
+        "location.waste_edge.ambient.1",
+        "location.waste_edge.ambient.2"
+      ],
+      "coords": { "x": 6, "y": 7 },
+      "dangerLevel": 20,
+      "levelRange": [1, 3],
+      "connections": [
+        { "to": "old_crossing", "type": "plain" },
+        { "to": "pine_guard", "type": "plain" }
+      ],
+      "spawnTable": [
+        { "mobId": "ash_dog", "weight": 60, "min": 0, "max": 2 },
+        { "mobId": "pipe_rat", "weight": 40, "min": 0, "max": 1 }
+      ],
+      "cover": false,
+      "anomaly": "rot_low",
+      "art": {
+        "sky": ["#3a322c", "#1a1614"],
+        "ground": "#2a2420",
+        "weather": "rain",
+        "silhouettes": [
+          { "type": "rock", "x": 0.3, "y": 0.85, "scale": 0.7, "color": "#0f0c0a" },
+          { "type": "rock", "x": 0.7, "y": 0.9, "scale": 0.5, "color": "#0f0c0a" }
+        ]
+      }
+    }
+  ]
+}

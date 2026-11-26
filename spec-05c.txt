@@ -1,0 +1,194 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 5c из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — гекс-карта: hex-математика, LOS, препятствия, SVG-рендер карты боя. ТОЛЬКО геометрия и рендер. НЕ реализуй действия (move/shoot/stance), AI, полноценный экран боя. Это шаги 5d, 5e, 6.
+
+ЭТАПЫ 1–5b СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log).
+- schemas v2.0 + BattleStateSchema (server/game/battle/state.ts).
+- server/game/battle/formulas.ts: hitChance, rollDamage, rollCrit, applyCrit, armorAbsorb, damageAfterArmor, rollPenetration, damageWithPenetration, damageOutsideRange, xpForKill, xpToNextLevel, applyLevelUp. Все с инъекцией RNG. 130 тестов зелёные.
+- data/config/battle.json → gameData.battleConfig. data/level_table.json → gameData.levelTable.
+- server/db/battle-repo.ts, server/api/battle.ts (start/get/active).
+- client/js/screens/{character,map,location,inventory}.js, main.js роутинг.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono. min-width 1280px.
+- Все строки — только i18n.
+
+ЗАДАЧА 5c — ТОЛЬКО:
+1. Hex-математика (чистые функции, отдельный модуль).
+2. LOS и проверка движения (чистые функции).
+3. SVG-рендер карты (компонент, без действий).
+4. Клиентский экран «карта боя» — только рендер + подсветка, без кнопок действий (они в 5d).
+5. Тесты на hex-математику и LOS.
+
+НЕ РЕАЛИЗУЙ: applyAction, движение (изменение hex), стрельбу, смену позы, AI, полноценный экран боя с логом и панелью действий, WebSocket.
+
+1. HEX-МАТЕМАТИКА (server/game/battle/hex.ts) — чистые функции:
+
+Тип HexCoord = { q: number; r: number } (axial, pointy-top).
+
+// Координаты
+hexToCube(hex): { x, y, z }  // x=q, z=r, y=-x-z
+cubeToHex(cube): HexCoord
+hexDistance(a, b): number   // манхэттен в кубе: (|dx|+|dy|+|dz|)/2
+hexNeighbors(hex): HexCoord[]  // 6 соседей (порядок: E, NE, NW, W, SW, SE)
+hexEquals(a, b): boolean
+hexAdd(a, b): HexCoord
+hexKey(hex): string  // "q,r" для Set/Map
+
+// Пиксели (для SVG, pointy-top)
+hexToPixel(hex, size): { x, y }  // size = радиус гекса (расстояние центр→угол)
+  - x = size * (sqrt(3) * q + sqrt(3)/2 * r)
+  - y = size * (3/2 * r)
+pixelToHex({x, y}, size): HexCoord  // обратное преобразование, округление через cube
+  - q = (sqrt(3)/3 * x - 1/3 * y) / size
+  - r = (2/3 * y) / size
+  - округлить через cube-round (стандартный алгоритм)
+
+hexCorners(hex, size): { x, y }[]  // 6 углов для <polygon>
+
+// Соседи в порядке E, NE, NW, W, SW, SE:
+// axial directions: [(+1,0), (+1,-1), (0,-1), (-1,0), (-1,+1), (0,+1)]
+
+2. LOS И ДВИЖЕНИЕ (server/game/battle/los.ts) — чистые функции:
+
+hasLineOfSight(params: {
+  from: HexCoord;
+  to: HexCoord;
+  obstacles: Obstacle[];
+  mapWidth: number;
+  mapHeight: number;
+}): boolean
+  - Если from === to → true
+  - Идти по линии между центрами гексов (алгоритм: cube_lerp + cube_round, стандартный)
+  - Если линия пересекает гекс с obstacle.blocksLos === true → false
+  - Если линия выходит за границы карты → false (можно стрелять только внутри карты)
+  - ВАЖНО: гекс from и to не считаются блокирующими (стрелок и цель не мешают сами себе)
+  - ВАЖНО: crate имеет blocksLos: false (за ним можно укрыться, но он не блокирует) — это уже в данных
+
+canMoveTo(params: {
+  from: HexCoord;
+  to: HexCoord;
+  obstacles: Obstacle[];
+  occupiedHexes: HexCoord[];  // гексы, занятые другими участниками
+  mapWidth: number;
+  mapHeight: number;
+}): { ok: true } | { ok: false; reason: 'out_of_bounds' | 'blocked' | 'occupied' | 'not_adjacent' }
+  - to внутри [0..mapWidth-1] × [0..mapHeight-1] (пересчитать hex в offset coords: col = q + (r - (r&1)) / 2, row = r — для pointy-top odd-r; или проще: проверить, что hexToPixel(to) внутри прямоугольника карты)
+  - to не в obstacles с blocksMove: true
+  - to не в occupiedHexes
+  - hexDistance(from, to) === 1 (только соседний гекс за одно движение; многошаговое — 5d)
+
+reachableHexes(params: {
+  from: HexCoord;
+  maxSteps: number;
+  obstacles: Obstacle[];
+  occupiedHexes: HexCoord[];
+  mapWidth: number;
+  mapHeight: number;
+}): Set<string>  // hexKey для всех достижимых гексов в пределах maxSteps (BFS)
+  - Для подсветки движения в 5d.
+
+3. SVG-РЕНДЕР (client/js/battle/hex-render.js) — компонент:
+
+hexRender(container, params: {
+  map: BattleMap;
+  participants: Participant[];
+  highlight?: {
+    reachable?: Set<string>;       // подсветка достижимых гексов (зелёный)
+    los?: Set<string>;            // подсветка гексов с LOS (для стрельбы, синий)
+    selected?: HexCoord;          // выбранный гекс (обводка акцентом)
+    hover?: HexCoord;             // гекс под курсором (подсветка)
+  };
+  onHexClick?: (hex: HexCoord) => void;
+  onHexHover?: (hex: HexCoord | null) => void;
+  hexSize?: number;               // default 28
+}) → { destroy(): void; update(params): void }
+
+  - SVG с viewBox, ширина = mapWidth × sqrt(3) × hexSize + padding, высота = mapHeight × 1.5 × hexSize + padding
+  - Каждый гекс — <polygon points="..."> с классами:
+    * .hex (базовый)
+    * .hex.obstacle-wall / .hex.obstacle-rock / .hex.obstacle-tree / .hex.obstacle-crate — заливка по типу
+    * .hex.reachable — зелёная подсветка (opacity 0.3)
+    * .hex.los — синяя подсветка
+    * .hex.selected — обводка 2px акцент
+    * .hex.hover — обводка 1px белая
+  - Участники — <g> поверх гекса:
+    * Игрок — символ "@" (или иконка), класс .participant.player
+    * Мобы — первая буква имени (R для грызуна), класс .participant.mob.mob-<mobId> (для разных цветов)
+    * HP-бар над участником (тонкий, 20×2px)
+    * Позиция (stand/crouch/run/cover) — маленькая иконка в углу гекса (эмодзи: 🧍 / 🧎 / 🏃 / 🛡️)
+  - SVG должен масштабироваться (width: 100%; max-width: ...; height: auto)
+  - hover/click — через event listeners на <polygon>, данные — data-hex="q,r"
+  - destroy() — убрать listeners
+
+4. ЭКРАН «КАРТА БОЯ» (client/js/screens/battle-map.js) — только рендер:
+
+async function renderBattleMap(container, battleId) {
+  // 1. GET /api/battle/:id
+  // 2. Отрендерить hex-карту через hexRender
+  // 3. Показать список участников (имя, HP-бар, поза) — статично, без действий
+  // 4. Показать лог боя (только чтение, последние 20 записей, прокрутка)
+  // 5. НЕТ панели действий — она появится в 5d
+  // 6. НЕТ WebSocket — polling каждые 2 секунды для обновления (временное решение до 6)
+  // 7. Кнопка «Покинуть бой» — временно НЕ реализуем (это 5d)
+}
+
+  - На этом шаге: экран доступен по URL ?battle=<id> или через кнопку «Начать тестовый бой» на экране персонажа (для разработки; в 6 уберём).
+  - Кнопка «Начать тестовый бой» — POST /api/battle/start { mobIds: [random 1–2 из gameData.mobs] } → переход на экран карты.
+  - Клик по гексу — подсветка (без действий). Hover — подсветка гекса.
+
+5. КЛИЕНТ — main.js:
+  - Добавить роутинг 'battle-map' с параметром battleId.
+  - Смена языка — перерисовать (лог боя НЕ переводится, это by design).
+
+6. ТЕСТЫ (Vitest, server/game/battle/__tests__/hex.test.ts и los.test.ts):
+
+hex:
+  - hexDistance((0,0), (0,0)) = 0
+  - hexDistance((0,0), (1,0)) = 1
+  - hexDistance((0,0), (0,1)) = 1
+  - hexDistance((0,0), (2,-1)) = 2
+  - hexNeighbors((0,0)).length = 6
+  - hexToPixel / pixelToHex: round-trip для 100 случайных гексов → тот же гекс (±1)
+  - hexToCube((1,2)) → {x:1, y:-3, z:2}, cubeToHex обратно
+
+los:
+  - LOS между соседями без препятствий → true
+  - LOS через стену (blocksLos: true) → false
+  - LOS через crate (blocksLos: false) → true
+  - LOS через угол (стена стоит на линии) → false
+  - LOS за границу карты → false
+  - canMoveTo: сосед, свободен → ok
+  - canMoveTo: сосед, стена → blocked
+  - canMoveTo: сосед, занят → occupied
+  - canMoveTo: не сосед → not_adjacent
+  - canMoveTo: за границу → out_of_bounds
+  - reachableHexes: 1 шаг, без препятствий → 6 гексов
+  - reachableHexes: 2 шага, без препятствий → 18 гексов
+  - reachableHexes: 1 шаг, со стеной → 5 гексов
+
+  (набор карт для тестов: пустая 5×5, 5×5 со стеной в центре, 5×5 с углом)
+
+7. КЛИЕНТСКИЕ ТЕСТЫ — НЕТ (рендер проверяется вручную).
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ реализуй: applyAction, движение (изменение hex), стрельбу, смену позы, AI, WebSocket.
+- НЕ добавляй таблиц БД.
+- НЕ меняй BattleState-схему (поля уже есть).
+- НЕ меняй формулы.
+- НЕ трогай schemas/{items,mobs,world,common,art,battle_phrases,i18n}.ts.
+- НЕ хардкодь строки — только i18n.
+- НЕ реализуй полноценный экран боя (лог + панель действий + WebSocket) — это этап 6.
+- Если сомневаешься — README → Backlog.
+
+КРИТЕРИЙ ПРИЁМКИ 5c:
+1. npm run dev — сервер стартует.
+2. На экране персонажа — кнопка «Начать тестовый бой» (временная, для разработки).
+3. Клик → POST /api/battle/start { mobIds: ["pipe_rat"] } → экран «Карта боя».
+4. На экране: SVG-гекс-карта 10×10, игрок @ в (2,5), грызун R в (7,5), 3–4 препятствия на карте.
+5. Клик по гексу — подсветка (selected). Hover — подсветка. Никаких действий.
+6. Список участников: имя, HP-бар, поза. Лог боя: 1 запись «Трубный грызун бросается на вас!».
+7. Клик по гексу, где нет LOS (за стеной) — подсветка красным (или ничего). Гексы с LOS — синие (если выбрано действие «Выстрел» — но действий в 5c нет, поэтому подсветка LOS — только если игрок кликнул на моба, без выстрела).
+8. Перезагрузка страницы на ?battle=<id> → карта восстановлена.
+9. npm test — все зелёные (минимум 18 новых: hex + los).
+10. tsc --noEmit чисто.
+11. Этапы 1–5b не сломаны.
+
+Начни с server/game/battle/hex.ts и los.ts.

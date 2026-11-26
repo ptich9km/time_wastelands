@@ -1,0 +1,231 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 8 из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — экономика: магазины в городах, инфляция, продажа лута, именные NPC, слухи, милостыня. ТОЛЬКО ЭТО. Не трогай бой, WS, sync, engine, формулы, spawn.
+
+ЭТАПЫ 1–7 СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log).
+- characters: id=1, name, level, xp, 6 статов, hp_current, hp_max, ap_max, money, location_id, last_rest_at.
+- inventory: id, character_id=1, item_id, qty, equipped_slot.
+- items.json: 29 предметов, price (базовая цена), rarity (common/uncommon/rare/epic), type (weapon/armor/consumable/ammo/misc).
+- world.json: 12 локаций, type (city|waste|ruins|mine|road|camp), shopId? (у zarya и pepel уже есть: "zarya_shop", "pepel_shop"), npcIds? (у zarya: ["koval", "vera"], у pepel: ["molchun"]).
+- server/api/{character,world,inventory,battle}.ts, server/db/{character-repo,world-repo,inventory-repo,battle-repo}.ts.
+- POST /api/inventory/equip, /unequip, /use; POST /api/character/rest, /heal.
+- client/js/screens/{character,map,location,inventory,battle-map,battle-result}.js, main.js.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono. min-width 1280px.
+- Все строки — только i18n (snake_case).
+- 300+ тестов зелёные, tsc чистый.
+
+ЗАДАЧА 8 — ТОЛЬКО экономика и NPC.
+
+1. ДАННЫЕ (data/shops.json — новый файл):
+{
+  "version": "1.0",
+  "shops": [
+    {
+      "id": "zarya_shop",
+      "nameKey": "shop.zarya.name",
+      "locationId": "zarya",
+      "multiplier": 1.0,                 // множитель цен (город-хаб, дороже)
+      "stock": [
+        { "itemId": "rusty_pipe", "baseQty": 3 },
+        { "itemId": "hunting_knife", "baseQty": 2 },
+        { "itemId": "leather_jacket", "baseQty": 2 },
+        { "itemId": "medkit", "baseQty": 5 },
+        { "itemId": "bandage", "baseQty": 10 },
+        { "itemId": "ammo_light", "baseQty": 5 },
+        { "itemId": "ammo_medium", "baseQty": 3 }
+      ]
+    },
+    {
+      "id": "pepel_shop",
+      "nameKey": "shop.pepel.name",
+      "locationId": "pepel",
+      "multiplier": 0.9,                 // шахтёрский город, дешевле
+      "stock": [
+        { "itemId": "rusty_pipe", "baseQty": 2 },
+        { "itemId": "fire_axe", "baseQty": 1 },
+        { "itemId": "welder_mask", "baseQty": 2 },
+        { "itemId": "canvas_pants", "baseQty": 3 },
+        { "itemId": "worn_boots", "baseQty": 3 },
+        { "itemId": "medkit", "baseQty": 3 },
+        { "itemId": "spore_antidote", "baseQty": 2 },
+        { "itemId": "ammo_heavy", "baseQty": 2 }
+      ]
+    }
+  ]
+}
+Zod-схема ShopsFileSchema, crossValidate: shopId в world.json существует, locationId существует и type === 'city', itemId в stock существует в items.json.
+
+2. ДАННЫЕ (data/npcs.json — новый файл):
+{
+  "version": "1.0",
+  "npcs": [
+    {
+      "id": "koval",
+      "nameKey": "npc.koval.name",
+      "locationId": "zarya",
+      "role": "blacksmith",             // для UI (иконка)
+      "dialogueKeys": ["npc.koval.line.1", "npc.koval.line.2", "npc.koval.line.3", "npc.koval.line.4", "npc.koval.line.5"],
+      "rumorKeys": ["npc.koval.rumor.1"]
+    },
+    {
+      "id": "vera",
+      "nameKey": "npc.vera.name",
+      "locationId": "zarya",
+      "role": "medic",
+      "dialogueKeys": ["npc.vera.line.1", "npc.vera.line.2", "npc.vera.line.3", "npc.vera.line.4", "npc.vera.line.5", "npc.vera.line.6"],
+      "rumorKeys": ["npc.vera.rumor.1", "npc.vera.rumor.2"]
+    },
+    {
+      "id": "molchun",
+      "nameKey": "npc.molchun.name",
+      "locationId": "pepel",
+      "role": "miner",
+      "dialogueKeys": ["npc.molchun.line.1", "npc.molchun.line.2", "npc.molchun.line.3", "npc.molchun.line.4", "npc.molchun.line.5"],
+      "rumorKeys": ["npc.molchun.rumor.1"]
+    }
+  ]
+}
+Zod-схема NpcsFileSchema, crossValidate: npcId в world.npcIds существует, locationId существует.
+
+3. СХЕМА БД (server/db/schema.sql — CREATE TABLE IF NOT EXISTS):
+   shop_state (
+     shop_id TEXT NOT NULL,
+     item_id TEXT NOT NULL,
+     stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
+     inflation REAL NOT NULL DEFAULT 0,   -- 0..N, накапливается от покупок
+     trend INTEGER NOT NULL DEFAULT 0,    -- 1 = "в тренде дня" (продажа 70%), 0 = обычная (50%)
+     restocked_at TEXT NOT NULL DEFAULT (datetime('now')),
+     PRIMARY KEY (shop_id, item_id)
+   )
+   Индекс: (shop_id).
+   -- trend и restocked_at обновляются раз в игровые сутки (15 минут реального времени).
+
+4. РЕПОЗИТОРИЙ (server/db/shop-repo.ts):
+   - getShopState(db, shopId) → [{itemId, stock, inflation, trend, restockedAt}]
+   - upsertShopState(db, shopId, itemId, {stock, inflation, trend, restockedAt})
+   - getShop(db, shopId) → Shop из gameData.shops.shops
+   - restockIfNeeded(db, shopId, now) → если restockedAt старше 15 минут реального времени — пересчитать сток (baseQty), сбросить inflation = 0, выбрать 1 случайный предмет как trend = 1 (остальные 0), restockedAt = now.
+   - getPrice(basePrice, shopMultiplier, inflation) → round(basePrice × shopMultiplier × (1 + inflation / 100))
+   - increaseInflation(db, shopId, itemId, amount=0.5) → inflation += 0.5 (clamp 0..50)
+   - getSellPrice(basePrice, isTrend) → round(basePrice × (isTrend ? 0.7 : 0.5))
+
+5. ЛОГИКА (server/game/economy/shop.ts):
+   - canBuy(character, item, shopState, price) → { ok: true } | { ok: false, reason: 'not_enough_money' | 'out_of_stock' | 'requirements_not_met' }
+   - buyItem(db, characterId, shopId, itemId) →
+     * restockIfNeeded
+     * получить shopState
+     * если stock <= 0 → 400 out_of_stock
+     * price = getPrice
+     * если character.money < price → 400 not_enough_money
+     * проверить requirements (level, str, agi, int, end, per, intel) — если не выполнены → 400 requirements_not_met
+     * character.money -= price
+     * inventory.addItem(itemId, 1)
+     * shopState.stock -= 1; inflation += 0.5
+     * 200 { character, inventory, shopState }
+   - sellItem(db, characterId, shopId, inventoryId) →
+     * получить строку inventory
+     * item = items[inventoryId.itemId]
+     * если item.type === 'misc' и price < 5 → всё равно можно продать (за 1–2 гильзы)
+     * isTrend = shopState.trend === 1 для этого itemId
+     * price = getSellPrice(item.price, isTrend)
+     * inventory qty -= 1; если qty === 0 — удалить
+     * character.money += price
+     * 200 { character, inventory, price }
+
+6. NPC ЛОГИКА (server/game/economy/npc.ts):
+   - getNpcDialog(npc, lang) → { line: string, rumor?: string } — случайная line из dialogueKeys, случайный rumor из rumorKeys (опционально).
+   - Милостыня: beggar(db, characterId) →
+     * Проверить: money < 20 И hp_current < 30% от hp_max.
+     * Проверить meta: last_beggar_at — если < 24 часов назад → 400 already_begged.
+     * money += 10, hp_current = min(hp_max, hp_current + 20).
+     * meta.last_beggar_at = now.
+     * 200 { character, received: {money: 10, hp: 20} }.
+
+7. REST API (server/api/shop.ts — новый файл):
+   - GET /api/shop/:shopId → 200 { shop: { id, nameKey, locationId, items: [{itemId, nameKey, price, stock, trend, requirements, rarity, icon}] } }
+     * 404 если shopId нет.
+     * 400 если персонаж не в этом городе (location_id !== shop.locationId).
+   - POST /api/shop/:shopId/buy → body { itemId, qty? = 1 }
+     * 200 { character, inventory, shop }
+     * 400 not_enough_money | out_of_stock | requirements_not_met
+   - POST /api/shop/:shopId/sell → body { inventoryId }
+     * 200 { character, inventory, shop, price }
+     * 400 not_found | not_sellable (нельзя продать экипированное)
+   - server/api/npc.ts — новый файл:
+     * GET /api/npc/:npcId → 200 { npc: { id, nameKey, role, line, rumor? } }
+     * POST /api/npc/:npcId/beggar → 200 { character, received } | 400 not_eligible | already_begged
+   - Регистрация в index.ts.
+
+8. КЛИЕНТ:
+   - client/js/screens/shop.js — новый экран:
+     * Открывается из location.js (кнопка «Магазин», если loc.shopId).
+     * Таблица: иконка, название (nameKey → i18n), цена (с учётом инфляции), сток, требования (подсветка красным, если не выполнены), редкость цветом.
+     * Кнопка [Купить] — disabled, если stock 0 или money < price или requirements не выполнены (тултип с причиной).
+     * Вкладка «Продать»: список инвентаря (кроме экипированного), кнопка [Продать] с ценой (50% или 70%, если trend).
+     * Кнопка [Обновить] — GET /api/shop/:shopId (после покупки).
+     * Кнопка [Назад] → location.
+   - client/js/screens/location.js — доработать:
+     * Если loc.shopId — кнопка «Магазин».
+     * Если loc.npcIds.length > 0 — список NPC (иконка + nameKey), клик → модал с репликой (line) и слухом (rumor).
+     * Кнопка «Попросить милостыню» (если money < 20 и hp < 30%) — POST /api/npc/:npcId/beggar для первого NPC в локации.
+   - client/js/screens/inventory.js — добавить кнопку [Продать] (если не экипировано) — открывает shop.js? Нет, проще: в shop.js вкладка «Продать».
+   - client/js/api.js — getShop(shopId), buy(shopId, itemId, qty), sell(shopId, inventoryId), getNpc(npcId), beggar(npcId).
+   - client/js/main.js — роутинг 'shop' с параметром shopId.
+   - CSS — классы: .shop-screen, .shop-tabs, .shop-table, .shop-row, .shop-row.disabled, .shop-price, .shop-stock, .npc-list, .npc-item, .npc-dialog, .beggar-button. Стиль — по гайду.
+   - i18n-ключи (RU + EN):
+     * shop.zarya.name («Лавка Коваля»), shop.pepel.name («Шахтёрский магазин»)
+     * ui.shop.title, .tab.buy, .tab.sell, .column.item, .column.price, .column.stock, .column.requirements, .button.buy, .button.sell, .button.refresh, .button.back
+     * ui.shop.error.not_enough_money, .out_of_stock, .requirements_not_met, .not_in_city, .not_found, .not_sellable
+     * ui.shop.trend («В тренде!»)
+     * ui.shop.sold ({price})
+     * ui.location.button.shop («Магазин»), .button.beggar («Попросить милостыню»)
+     * ui.location.npc.talk («Поговорить»)
+     * ui.npc.dialog_title ({name}), .rumor («Слух:»)
+     * ui.npc.beggar.received ({money}, {hp}), .not_eligible («Вам ещё не настолько плохо»), .already_begged («Вы уже просили сегодня»)
+     * npc.koval.name («Старик Коваль»), npc.koval.line.1-5, npc.koval.rumor.1
+     * npc.vera.name («Вера»), npc.vera.line.1-6, npc.vera.rumor.1-2
+     * npc.molchun.name («Молчун»), npc.molchun.line.1-5, npc.molchun.rumor.1
+     * Тексты NPC — в духе сеттинга (постсоветская тоска с чёрным юмором). Коваль — ворчливый кузнец, Вера — циничная медсестра, Молчун — бывший шахтёр.
+
+9. ТЕСТЫ (Vitest, минимум 20):
+   - getPrice: base 100, mult 1.0, inflation 0 → 100; inflation 10 → 110; mult 0.9 → 90.
+   - getSellPrice: base 100, not trend → 50; trend → 70.
+   - restockIfNeeded: restockedAt старше 15 мин → stock = baseQty, inflation = 0, trend выбран 1 случайно.
+   - restockIfNeeded: restockedAt свежий → ничего не меняется.
+   - buyItem: успех → money −price, inventory +1, stock −1, inflation +0.5.
+   - buyItem: stock 0 → out_of_stock.
+   - buyItem: money < price → not_enough_money.
+   - buyItem: requirements не выполнены → requirements_not_met.
+   - sellItem: успех → money +price, qty −1 (или удалён).
+   - sellItem: trend → цена 70%.
+   - sellItem: экипированное → not_sellable.
+   - GET /api/shop/:shopId: в городе → 200; не в городе → 400; нет shopId → 404.
+   - POST /api/shop/:shopId/buy: 200 / 400.
+   - GET /api/npc/:npcId: 200 с line, rumor.
+   - beggar: money 10, hp < 30%, не просил → 200, money +10, hp +20.
+   - beggar: money >= 20 → not_eligible.
+   - beggar: уже просил сегодня → already_begged.
+   - crossValidate: shopId в world.json существует; locationId type === 'city'; npcId в world.npcIds существует.
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ трогай бой, WS, sync, engine, формулы, spawn.
+- НЕ добавляй таблиц, кроме shop_state.
+- НЕ меняй characters, inventory (кроме money/qty через репозитории).
+- НЕ хардкодь строки — только i18n.
+- НЕ реализуй крафт, аукцион, клан-магазин, встройки — это v0.2.
+
+КРИТЕРИЙ ПРИЁМКИ 8:
+1. npm run dev — сервер стартует, shop_state создана.
+2. В Заре — кнопка «Магазин» на экране локации.
+3. Магазин: 7 предметов, цены, сток, требования. Купить «Аптечку» → money −30, inventory +1, stock −1.
+4. Купить предмет с requirements level 3 на 1 ур. → 400, кнопка disabled с тултипом.
+5. Продать «Крысиную шкуру» → money +7 (50% от 15).
+6. Продать «в тренде» → 70% (проверить на предмете, который выпал как trend).
+7. NPC Коваль — клик → модал с репликой и слухом.
+8. Милостыня: money 5, hp 10/65 → кнопка, POST → money 15, hp 30/65.
+9. Милостыня повторно → already_begged.
+10. Перезапуск сервера → shop_state сохранилась, инфляция не сброшена (если не прошло 15 мин).
+11. npm test — все зелёные (минимум 20 новых).
+12. tsc --noEmit чисто.
+13. Этапы 1–7 не сломаны.
+
+Начни с data/shops.json, data/npcs.json и server/db/shop-repo.ts.

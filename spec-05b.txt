@@ -1,0 +1,319 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 5b из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — формулы боя. ТОЛЬКО чистые функции + конфиг + тесты + симуляция. НЕ реализуй действия (applyAction), карту, AI, UI. Это шаги 5c–5e и 6.
+
+ЭТАПЫ 1–5a СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log).
+- schemas v2.0: items (weapon: weaponCategory/level/damage/range/spread/sniper/apCost/reloadAp/pen/charges/ammoType; armor: slot/level/armor{head,torso,arms,legs}), mobs (stats{str,agi,int,end,per,intel}, attack{min,max,pen,range}, ai: aggressive|coward, moveAp, attackAp, loot).
+- server/game/battle/state.ts: BattleStateSchema, ParticipantSchema, HexCoord, Position, Stats6, Equipment, Effect, Obstacle, BattleMap, BattleLogEntry, BattleContext, BattleStatus. Zod + TS.
+- server/db/battle-repo.ts: createBattle, getBattle, updateBattleState, appendLog, getActiveBattleForCharacter, markFinished.
+- server/api/battle.ts: POST /api/battle/start, GET /api/battle/:id, GET /api/battle/active.
+- characters: id=1, 6 статов, hp_max=50+5×"end", ap_max=15+2×"end", location_id.
+- inventory: equipped_slot, маппинг jacket→torso, boots→legs.
+- data/level_table.json — НЕТ, создай в 5b.
+- data/config/battle.json — НЕТ, создай в 5b.
+- Все строки — только i18n.
+- Стиль — не нужен (нет UI).
+
+ЗАДАЧА 5b — ТОЛЬКО формулы. Никаких applyAction, move, shoot, AI.
+
+1. КОНФИГ (data/config/battle.json) — все константы формул:
+{
+  "hit": {
+    "clampMin": 5,
+    "clampMax": 95,
+    "zoneMods": { "torso": 1.0, "arms": 0.9, "legs": 0.8, "head": 0.6 },
+    "zoneModsIfPerAboveAgi": 1.0,
+    "positionMods": {
+      "stand": { "enemyPenalty": 0, "selfPenalty": 0, "dodge": 0 },
+      "crouch": { "enemyPenalty": 0, "selfPenalty": 0, "dodge": 0 },
+      "run": { "enemyPenalty": -30, "selfPenalty": -20, "dodge": 20 },
+      "cover": { "enemyPenalty": -30, "selfPenalty": -10, "dodge": 40 }
+    },
+    "coverBonus": -30,
+    "pointBlankHexes": 1
+  },
+  "damage": {
+    "critChanceBase": 5,
+    "critChancePerIntel": 0.5,
+    "critMultiplier": 1.5,
+    "minDamage": 1
+  },
+  "armor": {
+    "formulaAbove6": { "mult50": 50, "coef": 20, "offset": 80 },
+    "formulaUpTo6": { "cap": 80, "mult50": 50 },
+    "maxAbsorb": 80
+  },
+  "penetration": {
+    "fullDamageBelow": 40,
+    "linearFrom": 40,
+    "linearTo": 70,
+    "ignoredAbove": 70
+  },
+  "distance": {
+    "outsideRangeDivisor": 2,
+    "sniper": { "pointBlank": 0.1, "plateauAt": 0.7 }
+  },
+  "xp": {
+    "basePerLevel": 600,
+    "perHpBase": 1,
+    "levelDiffMod": 0.1,
+    "levelDiffClampMin": 0.1,
+    "levelDiffClampMax": 5.0
+  },
+  "healLimit": {
+    "startMult": 1.5,
+    "regenPerRoundMult": 0.2
+  }
+}
+Валидация конфига через Zod (ConfigSchema) при загрузке. Если конфиг битый — сервер не стартует.
+
+2. ТАБЛИЦА УРОВНЕЙ (data/level_table.json):
+{
+  "version": "1.0",
+  "levels": [
+    { "level": 1, "str": 3, "agi": 3, "int": 3, "end": 3, "per": 0, "intel": 0, "apMax": 21, "hpMax": 65 },
+    { "level": 2, "str": 4, "agi": 3, "int": 3, "end": 5, "per": 1, "intel": 0, "apMax": 25, "hpMax": 75 },
+    { "level": 3, "str": 5, "agi": 3, "int": 3, "end": 7, "per": 3, "intel": 1, "apMax": 29, "hpMax": 85 },
+    { "level": 4, "str": 7, "agi": 4, "int": 4, "end": 10, "per": 4, "intel": 1, "apMax": 35, "hpMax": 100 },
+    { "level": 5, "str": 10, "agi": 5, "int": 4, "end": 14, "per": 5, "intel": 2, "apMax": 43, "hpMax": 120 },
+    { "level": 6, "str": 13, "agi": 6, "int": 6, "end": 18, "per": 6, "intel": 3, "apMax": 51, "hpMax": 140 },
+    { "level": 7, "str": 16, "agi": 8, "int": 9, "end": 22, "per": 8, "intel": 3, "apMax": 59, "hpMax": 160 },
+    { "level": 8, "str": 20, "agi": 9, "int": 12, "end": 28, "per": 9, "intel": 4, "apMax": 71, "hpMax": 190 },
+    { "level": 9, "str": 25, "agi": 10, "int": 15, "end": 35, "per": 10, "intel": 5, "apMax": 85, "hpMax": 225 },
+    { "level": 10, "str": 30, "agi": 12, "int": 18, "end": 42, "per": 12, "intel": 6, "apMax": 99, "hpMax": 260 }
+  ]
+}
+Zod: LevelTableSchema, все поля int, hpMax = 50 + 5×end, apMax = 15 + 2×end (superRefine — проверить соответствие).
+Загрузка в loader.ts → gameData.levelTable. crossValidate: level_table покрывает уровни 1..10 без дыр.
+
+3. ФОРМУЛЫ (server/game/battle/formulas.ts) — чистые функции с инъекцией RNG:
+
+type Rng = () => number;  // 0 <= rng() < 1
+
+// --- Hit ---
+function hitChance(params: {
+  perAttacker: number;
+  agiTarget: number;
+  zone: 'head'|'torso'|'arms'|'legs';
+  distanceHexes: number;       // расстояние в гексах (>= 0; 0 = тот же гекс)
+  weapon: { range: number; spread: number; sniper: boolean };
+  positionAttacker: Position;  // stand|crouch|run|cover
+  positionTarget: Position;
+  coverTarget: boolean;        // цель в cover
+  config: HitConfig;
+}): { chance: number; distanceMod: number; zoneMod: number; positionMod: number; coverMod: number; pointBlank: boolean }
+  - pointBlank = distanceHexes <= config.pointBlankHexes
+  - Если pointBlank И positionAttacker in ('stand','crouch') И !coverTarget И positionTarget in ('stand','crouch') → chance = 100 (clamp не применяется)
+  - Иначе:
+    * baseRatio = perAttacker / max(agiTarget, 1)
+    * zoneMod = baseRatio >= 1 ? config.zoneModsIfPerAboveAgi : config.zoneMods[zone]
+    * distanceMod: линейно от 1.0 (1 гекс) до (weapon.spread / 100) на (weapon.range) гексах; за range — (weapon.spread / 100) (не падает дальше). Для sniper: 0.1 на 1 гексе → (spread/100) на (0.7 × range) → плато.
+      ВАЖНО: distanceHexes = 0 (тот же гекс) → distanceMod = 1.0.
+    * positionMod = 1 + (config.positionMods[positionAttacker].selfPenalty + config.positionMods[positionTarget].enemyPenalty) / 100
+    * coverMod = coverTarget ? 1 + config.coverBonus / 100 : 1.0
+    * chance = 100 × baseRatio × zoneMod × distanceMod × positionMod × coverMod
+    * clamp chance в [clampMin, clampMax]
+  - Вернуть объект с chance и компонентами (для лога и UI).
+
+// --- Damage ---
+function rollDamage(params: {
+  weaponDamage: { min: number; max: number };
+  ammoBonus: number;           // 0, если нет патронов
+  rng: Rng;
+}): number
+  - randInt(min, max) через rng
+  - + ammoBonus
+
+function rollCrit(params: {
+  intel: number;
+  config: DamageConfig;
+  rng: Rng;
+}): boolean
+  - chance = (config.critChanceBase + intel × config.critChancePerIntel) / 100
+  - return rng() < chance
+
+function applyCrit(damage: number, config: DamageConfig): number
+  - damage × config.critMultiplier (round)
+
+// --- Armor ---
+function armorAbsorb(params: {
+  armorValue: number;          // Y
+  weaponLevel: number;         // X
+  config: ArmorConfig;
+}): number  // процент 0..maxAbsorb
+  - if weaponLevel <= 6:
+      absorb = min(armorValue × config.formulaUpTo6.mult50 / config.formulaUpTo6.cap, config.maxAbsorb)
+    else:
+      absorb = min(armorValue × config.formulaAbove6.mult50 / (config.formulaAbove6.coef × weaponLevel - config.formulaAbove6.offset), config.maxAbsorb)
+  - ВАЖНО: знаменатель может быть <= 0 (при coef×X - offset <= 0) → absorb = maxAbsorb (защита «бесконечна»)
+  - return clamp(absorb, 0, maxAbsorb)
+
+function damageAfterArmor(params: {
+  damage: number;              // base после crit, ДО брони
+  absorb: number;              // процент 0..maxAbsorb
+}): number
+  - final = damage × (1 - absorb / 100)
+  - return max(round(final), config.minDamage)
+
+// --- Penetration ---
+function rollPenetration(params: {
+  pen: number;                 // 0..100
+  rng: Rng;
+}): boolean
+  - return rng() < pen / 100
+
+function damageWithPenetration(params: {
+  baseDamage: number;          // до брони, после crit
+  absorb: number;              // процент
+  penetrated: boolean;
+  config: PenetrationConfig;
+}): number
+  - если !penetrated → обычный урон: base × (1 - absorb/100)
+  - если penetrated:
+    * absorb < fullDamageBelow (40) → base × (1 - absorb/100) + base × (absorb/100) = base  (полный урон)
+    * absorb <= linearTo (70) → обычный + бонус_бронебоя × (1 - penalty), где:
+        ordinary = base × (1 - absorb/100)
+        bonus = base - ordinary     (= base × absorb/100)
+        penalty = (absorb - linearFrom) / (linearTo - linearFrom)
+        final = ordinary + bonus × (1 - penalty)
+    * absorb > ignoredAbove (70) → обычный урон (бронебой игнорируется)
+  - return max(round(final), config.minDamage)
+
+// --- Distance (для урона вне range) ---
+function damageOutsideRange(params: {
+  damage: number;
+  distanceHexes: number;
+  weaponRange: number;
+  config: DistanceConfig;
+}): number
+  - если distanceHexes <= weaponRange → damage
+  - иначе: damage / (config.outsideRangeDivisor ^ (distanceHexes - weaponRange))
+  - return max(round, minDamage)
+
+// --- XP ---
+function xpForKill(params: {
+  mobHp: number;
+  mobLevel: number;
+  playerLevel: number;
+  config: XpConfig;
+}): number
+  - diff = mobLevel - playerLevel
+  - mod = clamp(1 + diff × config.levelDiffMod, config.levelDiffClampMin, config.levelDiffClampMax)
+  - return floor(mobHp × config.perHpBase × mod)
+
+function xpToNextLevel(params: {
+  level: number;
+  config: XpConfig;
+}): number
+  - return config.basePerLevel × level
+
+// --- Level up ---
+function applyLevelUp(params: {
+  character: { str; agi; int; end; per; intel; hp; hpMax; apMax; level };
+  newLevel: number;
+  levelTable: LevelTable;
+}): { character, leveled: boolean, oldLevel: number }
+  - если newLevel <= character.level → leveled: false, вернуть как есть
+  - взять строку из levelTable по newLevel
+  - обновить статы, hpMax = row.hpMax, apMax = row.apMax
+  - hp: ВАЖНО — при левелапе HP ВОССТАНАВЛИВАЕТСЯ до hpMax (по TZ; если не так — поправим конфигом; в MVP — восстанавливаем)
+  - вернуть
+
+4. ТЕСТЫ (Vitest, 100% покрытие formulas.ts) — минимум 25 тестов:
+
+hitChance:
+  - pointBlank, оба stand, не cover → 100
+  - pointBlank, target cover → не 100 (работает формула)
+  - per=agi, зона торс, distance 1, stand/stand, не cover → chance ~ 100 × 1.0 × 1.0 = 100? Нет — clamp 95. Проверить: 95.
+  - per=10, agi=20 (ratio 0.5), зона голова (0.6), distance 1, stand/stand → 100 × 0.5 × 0.6 = 30
+  - per=20, agi=10 (ratio 2.0 >= 1), зона голова → zoneMod 1.0 → 100 × 2 × 1.0 = 200 → clamp 95
+  - distance 5 при range 5, spread 20 → distanceMod 0.2; проверить итог
+  - sniper range 10, spread 70, distance 1 → distanceMod 0.1; distance 7 → 0.7; distance 10 → 0.7 (плато)
+  - target run → positionMod учитывает enemyPenalty −30
+  - cover → coverMod 0.7
+
+damageAfterArmor:
+  - base 100, absorb 0 → 100
+  - base 100, absorb 50 → 50
+  - base 100, absorb 80 → 20
+  - base 1, absorb 80 → minDamage 1 (не 0)
+
+armorAbsorb:
+  - armor 100, weapon 12, coef 20, offset 80 → 100×50/(240−80) = 31.25 → 31.25
+  - armor 80, weapon 5 (<=6) → min(80×50/80, 80) = 50
+  - armor 200, weapon 12 → min(10000/160, 80) = 62.5
+  - armor 1000, weapon 12 → 80 (clamp maxAbsorb)
+
+damageWithPenetration (пример из вики):
+  - base 135, absorb 45, penetrated → ordinary 75, bonus 60, penalty (45−40)/30=0.167, final 75+60×0.833=125
+  - base 135, absorb 30, penetrated → 135 (полный урон)
+  - base 135, absorb 75, penetrated → обычный урон (бронебой игнорируется) = 33.75
+  - base 135, absorb 45, not penetrated → 75
+
+damageOutsideRange:
+  - damage 100, distance 5, range 5 → 100
+  - damage 100, distance 6, range 5, divisor 2 → 50
+  - damage 100, distance 8, range 5 → 12.5 → 13 (round)
+
+xpForKill:
+  - mobHp 18, mobLevel 1, playerLevel 1 → 18
+  - mobHp 18, mobLevel 3, playerLevel 1 → 18 × (1 + 2×0.1) = 21.6 → 21
+  - mobHp 18, mobLevel 1, playerLevel 10 → 18 × clamp(1−0.9, 0.1, 5) = 18 × 0.1 = 1.8 → 1
+  - mobHp 100, mobLevel 10, playerLevel 1 → 100 × clamp(1+0.9, 0.1, 5) = 100 × 1.9 = 190
+
+xpToNextLevel: level 1 → 600, level 5 → 3000
+
+applyLevelUp:
+  - level 1 → 2: статы из таблицы, hpMax 75, apMax 25, hp восстановлен до 75, leveled true
+  - level 5 → 5: leveled false, статы не меняются
+  - level 1 → 5 (прыжок): статы из таблицы уровня 5, hpMax 120
+
+Конфиг:
+  - ConfigSchema валидирует дефолтный конфиг
+  - Битой конфиг (clampMin > clampMax) → ошибка
+
+RNG:
+  - rollDamage с rng()=0 → min; rng()=0.99 → max (или close)
+  - rollCrit с intel=0, rng 0.04 → true; rng 0.06 → false
+
+5. СИМУЛЯЦИЯ (server/scripts/sim.ts — новый файл, npm run sim):
+  - 10 000 боёв «персонаж 1 ур. (stand) vs pipe_rat (stand)» — без брони у игрока (только стартовая куртка: leather_jacket, armor.torso = 20 — или без неё; см. ниже).
+  - ВАЖНО: на шаге 5b нет applyAction и карты. Симуляция упрощённая: оба стоят, игрок бьёт в торс, моб бьёт в торс, distance=1, без позиций, без движения. Считаем hit/damage/absorb/pen/крит до смерти.
+  - Расчёт:
+    * HP игрока 65, оружие rusty_pipe (damage 4–9, level 1, pen 0, range 1, apCost 8, charges — нет)
+    * HP моба 18, атака min 2 / max 5, pen 0, range 1
+    * Броня игрока: leather_jacket (torso 20, level 1) → armorAbsorb(20, 1) при weaponLevel <= 6 → 20×50/80 = 12.5% поглощения
+    * Моб без брони → absorb 0
+    * Игрок бьёт первым; каждый «ход» — один выстрел (без ОД-логики, просто чередование)
+    * Крит: шанс 5% + intel×0.5, intel=0 → 5%, множитель 1.5
+  - Вывести: winrate игрока (цель 70–85%), средняя длина боя в раундах (цель <= 6), средний урон за удар.
+  - Если winrate вне 70–85% — вывести ПРЕДУПРЕЖДЕНИЕ (не падать), чтобы можно было тюнить конфиг.
+  - Аналогично: «1 ур. vs rust_hulk (6 ур.)» — ожидаемый winrate <= 20%.
+  - Аналогично: «1 ур. vs 3 pipe_rat» — winrate 20–50%.
+
+6. ОБНОВИТЬ loader.ts:
+  - Загрузить data/config/battle.json → ConfigSchema.parse → gameData.battleConfig.
+  - Загрузить data/level_table.json → LevelTableSchema.parse → gameData.levelTable.
+  - crossValidate: level_table покрывает уровни 1..10; hpMax/apMax соответствуют формулам; mobs в data/mobs.json имеют level в пределах 1..10 (предупреждение, не ошибка, если >10).
+
+7. ОБНОВИТЬ package.json:
+  - "sim": "tsx server/scripts/sim.ts"
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ реализуй: applyAction, move, shoot, stance, reload, useItem, flee, AI, гекс-карту (визуализацию), UI, WebSocket.
+- НЕ добавляй таблиц БД.
+- НЕ меняй BattleState-схему (поля уже есть).
+- НЕ трогай schemas/{items,mobs,world,common,art,battle_phrases,i18n}.ts.
+- НЕ хардкодь числа формул — только из battleConfig.
+- Если сомневаешься — README → Backlog.
+
+КРИТЕРИЙ ПРИЁМКИ 5b:
+1. npm run validate-data — зелёный, конфиг и таблица уровней загружаются.
+2. npm test — все зелёные (минимум 25 новых на формулы).
+3. npm run sim — выводит winrate 1v1 (70–85%), 1v3 (20–50%), 1 vs rust_hulk (<=20%), средняя длина боя (<=6 раундов). Если winrate вне — предупреждение, не падение.
+4. tsc --noEmit — чисто.
+5. Пример из вики (base 135, absorb 45, pen) → 125. Тест зелёный.
+6. pointBlank (distance 1, оба stand, не cover) → 100% попадания.
+7. Формулы не используют Math.random напрямую — только через параметр rng.
+8. Этапы 1–5a не сломаны.
+
+Начни с data/config/battle.json и server/game/battle/formulas.ts.

@@ -1,0 +1,214 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 5a из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — модель боевого состояния (BattleState) и его сериализацию в БД. НЕ реализуй формулы, действия, гекс-карту, UI боя. Это шаги 5b–5e и 6.
+
+ЭТАПЫ 1–4 СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory).
+- schemas v2.0: items (weapon: weaponCategory/level/damage/range/spread/sniper/apCost/reloadAp/pen/charges/ammoType; armor: slot/level/armor{head,torso,arms,legs}), mobs (stats{str,agi,int,end,per,intel}, attack{min,max,pen,range}, ai: aggressive|coward, moveAp, attackAp, loot).
+- loader.ts + crossValidate(), validate-data, validate-i18n — зелёные.
+- characters: id=1, 6 статов, hp_max=50+5×"end", ap_max=15+2×"end", location_id.
+- inventory: id, character_id=1, item_id, qty, equipped_slot (NULL | weapon|head|torso|jacket|legs|boots), UNIQUE(character_id, equipped_slot) WHERE equipped_slot IS NOT NULL.
+- server/api/{character,world,inventory}.ts, server/db/{character-repo,world-repo,inventory-repo}.ts.
+- client: screens/{character,map,location,inventory}.js, main.js роутинг.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono. min-width 1280px.
+- Все строки — только i18n.
+
+ЗАДАЧА 5a — ТОЛЬКО:
+1. Типы BattleState (server/game/battle/state.ts) — Zod-схемы + TypeScript-типы.
+2. Сериализация/десериализация в БД (таблицы battle_sessions, battle_log).
+3. Репозиторий (server/db/battle-repo.ts): createBattle, getBattle, updateBattleState, appendLog, getActiveBattleForCharacter.
+4. REST API: POST /api/battle/start, GET /api/battle/:id. НЕ applyAction.
+5. Тесты на сериализацию/восстановление.
+
+НЕ РЕАЛИЗУЙ: формулы (hit/damage/absorb), действия (move/shoot/stance), гекс-карту (визуализацию), UI боя, WebSocket, AI.
+
+1. ТИПЫ (server/game/battle/state.ts) — Zod + TS:
+
+type HexCoord = { q: number; r: number };  // axial coords, pointy-top
+  q: int (-50..50), r: int (-50..50)
+
+type Position = 'stand' | 'crouch' | 'run' | 'cover';
+
+type ParticipantKind = 'player' | 'mob';
+
+type Stats6 = { str, agi, int, end, per, intel } — все int >= 0 (у игрока per/intel могут быть 0; у моба уже провалидировано >= 1 в mobs.json)
+
+type Equipment = {
+  weaponId: string | null;   // null = без оружия
+  armor: { head: string | null; torso: string | null; arms: string | null; legs: string | null; };
+  // arms — экипировка рук (перчатки/наручи) — в items.json слот "arms" пока НЕ используется, но поле в state есть для совместимости
+}
+
+type Effect = {
+  id: string;
+  kind: 'poison' | 'bleed' | 'stun' | 'buff' | 'debuff';
+  ttlRounds: int >= 0;
+  payload?: Record<string, unknown>;  // произвольные данные (v0.2)
+}
+
+type Participant = {
+  id: string;                      // уникальный в бою: "player" | "mob_1" | "mob_2"
+  kind: ParticipantKind;
+  refId: string;                   // characterId ("1") для игрока, mobId для моба
+  stats: Stats6;
+  hp: int >= 0;
+  hpMax: int >= 1;
+  ap: int >= 0;
+  apMax: int >= 0;
+  hex: HexCoord;
+  position: Position;
+  facing: int 0..5;                // v0.2, но поле есть
+  equipment: Equipment;
+  effects: Effect[];
+  // для мобов:
+  mobLevel?: int >= 1;
+  mobNameKey?: string;
+  // для игрока:
+  characterName?: string;
+}
+
+type Obstacle = {
+  hex: HexCoord;
+  type: 'wall' | 'rock' | 'tree' | 'crate';
+  blocksLos: boolean;              // блокирует линию огня
+  blocksMove: boolean;             // блокирует движение
+}
+
+type BattleMap = {
+  width: int >= 1;                 // в гексах
+  height: int >= 1;
+  obstacles: Obstacle[];
+}
+
+type BattleLogEntry = {
+  round: int >= 1;
+  actor: string;                   // "player" | "mob_1" | "system"
+  type: 'hit' | 'miss' | 'crit' | 'info' | 'system' | 'flee' | 'death' | 'heal';
+  text: string;                    // уже переведённый текст (не i18n-ключ)
+  // ВАЖНО: лог пишется на языке клиента на момент события, чтобы при реконнекте не пересчитывать.
+  // Если клиент на другом языке — лог не переводится (это by design, TZ так и делала).
+  createdAt: string;               // ISO
+}
+
+type BattleContext = {
+  locationId: string;
+  isAmbush: boolean;
+  cover: boolean;                  // локация с cover:true
+  timeOfDay: 'day' | 'night';      // пока 'day', v0.2
+}
+
+type BattleStatus = 'active' | 'victory' | 'defeat' | 'fled';
+
+type BattleState = {
+  id: string;                      // uuid v4
+  round: int >= 1;
+  status: BattleStatus;
+  phase: 'player_turn' | 'enemy_turn' | 'finished';
+  map: BattleMap;
+  participants: Participant[];     // минимум 2 (игрок + 1 моб)
+  turnOrder: string[];             // id в порядке инициативы (пока: ["player", "mob_1", ...])
+  currentActorId: string;
+  log: BattleLogEntry[];           // append-only, в БД отдельная таблица
+  context: BattleContext;
+  healLimit: { current: int >= 0; max: int >= 0; regenPerRound: int >= 0 };
+  result?: 'victory' | 'defeat' | 'fled';
+  createdAt: string;
+  updatedAt: string;
+}
+
+Zod-схемы: BattleStateSchema, ParticipantSchema, BattleLogEntrySchema, и т.д. Валидация hex.q/r в диапазоне -50..50.
+
+ВАЖНО: Zod-схема — источник правды. Если поле добавится в v0.2 — расширяй схему с .optional() с default.
+
+2. СХЕМА БД (server/db/schema.sql, CREATE TABLE IF NOT EXISTS):
+   battle_sessions (
+     id TEXT PRIMARY KEY,                       -- uuid v4
+     character_id INTEGER NOT NULL DEFAULT 1 CHECK (character_id = 1),
+     status TEXT NOT NULL CHECK (status IN ('active', 'victory', 'defeat', 'fled')),
+     state_json TEXT NOT NULL,                  -- JSON BattleState БЕЗ log (лог отдельно)
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+     FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+   )
+   -- Индекс: (character_id, status) — для getActiveBattleForCharacter
+   -- Частичный unique: CREATE UNIQUE INDEX ... ON battle_sessions(character_id) WHERE status = 'active'
+   --   (у одного персонажа не может быть двух активных боёв)
+
+   battle_log (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     battle_id TEXT NOT NULL,
+     round INTEGER NOT NULL,
+     actor TEXT NOT NULL,
+     type TEXT NOT NULL CHECK (type IN ('hit','miss','crit','info','system','flee','death','heal')),
+     text TEXT NOT NULL,
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     FOREIGN KEY (battle_id) REFERENCES battle_sessions(id) ON DELETE CASCADE
+   )
+   -- Индекс: (battle_id, id)
+
+3. РЕПОЗИТОРИЙ (server/db/battle-repo.ts):
+   - createBattle(db, state: BattleState) — вставить в battle_sessions (state_json без поля log), в battle_log вставить все записи из state.log. Транзакционно.
+   - getBattle(db, id) — вернуть BattleState | null: state_json + собрать log из battle_log ORDER BY id.
+   - updateBattleState(db, state) — UPDATE state_json, updated_at; новые записи log — append (не перезаписывать). ВАЖНО: log в state — это ВСЁ, что было + новое. При update — сравнивать длину с уже сохранённым логом и добавлять только новые. (Или: appendLog отдельно. Выбери подход — но без дублей и без потери.)
+   - appendLog(db, battleId, entries: BattleLogEntry[]) — добавить пачку записей.
+   - getActiveBattleForCharacter(db) — вернуть BattleState | null (status='active').
+   - markFinished(db, id, result) — status='victory'|'defeat'|'fled', updated_at.
+   - Все — prepared statements, транзакции где нужно.
+
+4. REST API (server/api/battle.ts — новый файл, регистрируется в index.ts):
+   - POST /api/battle/start → body { mobIds: string[] } — минимально 1 моб, максимально 3.
+     * Валидация: персонаж есть; mobIds существуют в gameData.mobs; у персонажа нет активного боя (409 battle_already_active); все мобы в сумме level <= character.level + 5 (иначе 400 too_hard); локация персонажа — в мире.
+     * Создать BattleState:
+       - map: 10×10, obstacles: 3–4 случайных препятствия (wall/rock/tree/crate), не на гексах спавна. Если в world.json у локации есть battleMap — использовать его (пока нет — дефолт).
+       - participants: player (из character + equipped из inventory) + по одному mob на каждый mobId. Позиции: player в (2, 5), мобы в (7, 5), (7, 4), (7, 6) — не на препятствиях, при конфликте — сдвиг.
+       - stats: player из character; mob из mob.stats.
+       - hp/hpMax: player из character.hp_current/hp_max; mob из mob.hp.
+       - ap/apMax: player = ap_max; mob = 4 (фиксировано, mob.moveAp в MVP не используется).
+       - position: 'stand' для всех; facing: 0 (на восток — v0.2).
+       - equipment: player — надетое; mob — { weaponId: null, armor: { head:null,torso:null,arms:null,legs:null } } (броня мобов — v0.2).
+       - healLimit: { current: floor(hpMax * 1.5), max: floor(hpMax * 1.5), regenPerRound: floor(hpMax * 0.2) }.
+       - turnOrder: ['player', ...mobIds], currentActorId = 'player'.
+       - log: [{ round: 1, actor: 'system', type: 'system', text: t('battle.start', lang, { target: mobName }) }] — стартовая запись.
+       - context: { locationId: character.location_id, isAmbush: false, cover: world.location.cover ?? false, timeOfDay: 'day' }.
+     * Сохранить в БД.
+     * 201 { battleId, state } (state с log).
+   - GET /api/battle/:id → 200 { state } | 404 { error: 'battle_not_found' }.
+     * Возвращать state с логом.
+   - GET /api/battle/active → 200 { state } | 404 { error: 'no_active_battle' }.
+   - Язык лога: из query ?lang= или из Accept-Language или из тела (пока — из query ?lang=ru|en, default ru). Клиент передаёт.
+
+5. КЛИЕНТ — НЕ ТРОГАЙ. Экран боя — этап 6.
+
+6. ТЕСТЫ (Vitest, in-memory SQLite):
+   - createBattle → getBattle возвращает идентичный state (кроме createdAt/updatedAt — сравнивать по содержимому без них; log — по содержимому).
+   - Сериализация: state с 3 участниками, 2 препятствиями, 5 записями лога → save → load → deepEqual (без timestamps).
+   - updateBattleState: изменить hp игрока, добавить 2 записи лога → getBattle возвращает новое hp и 7 записей (без дублей).
+   - appendLog: добавить 2 записи → 7 всего.
+   - getActiveBattleForCharacter: после create — возвращает; после markFinished — null.
+   - UNIQUE active: второй createBattle для того же персонажа без markFinished → ошибка (или 409 на уровне API).
+   - POST /api/battle/start: 201, state валиден по BattleStateSchema, log содержит стартовую запись.
+   - POST /api/battle/start с несуществующим mobId → 400.
+   - POST /api/battle/start при активном бое → 409.
+   - GET /api/battle/:id несуществующий → 404.
+   - GET /api/battle/active без боя → 404.
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ реализуй: формулы (hit/damage/absorb/pen), действия (move/shoot/stance/reload), AI, гекс-карту (только структура данных, без визуализации), UI боя, WebSocket.
+- НЕ добавляй таблиц, кроме battle_sessions и battle_log.
+- НЕ меняй characters, inventory, world_state.
+- НЕ трогай schemas/items.ts, mobs.ts, world.ts (battleMap в world.json пока нет — дефолт).
+- НЕ хардкодь строки — только i18n. Лог боя пишется через t() на языке клиента.
+- Не забудь: log в state_json НЕ ДУБЛИРУЕТСЯ — он в отдельной таблице battle_log.
+- Если сомневаешься — README → Backlog.
+
+КРИТЕРИЙ ПРИЁМКИ 5a:
+1. npm run dev — таблицы battle_sessions и battle_log созданы.
+2. POST /api/battle/start { mobIds: ["pipe_rat"] } → 201, state валиден, в логе одна запись «Грызун бросается на вас!».
+3. GET /api/battle/:id → 200 с тем же state.
+4. GET /api/battle/active → 200 (пока бой активен).
+5. POST /api/battle/start повторно → 409 battle_already_active.
+6. Перезапуск сервера → GET /api/battle/:id всё ещё возвращает state (сериализация работает).
+7. State содержит: map 10×10, 3–4 препятствия, 2+ участника с корректными hex, healLimit, turnOrder.
+8. npm test — все зелёные (минимум 10 новых).
+9. validate-data / validate-i18n / tsc — зелёные.
+10. Этапы 1–4 не сломаны.
+
+Начни с дерева файлов и server/game/battle/state.ts.

@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "categories": {
+    "battle.start":              { "minVariants": 3, "placeholders": ["target"] },
+    "battle.hit.head":           { "minVariants": 4, "placeholders": ["target", "dmg"] },
+    "battle.hit.torso":          { "minVariants": 4, "placeholders": ["target", "dmg"] },
+    "battle.hit.arms":           { "minVariants": 3, "placeholders": ["target", "dmg"] },
+    "battle.hit.legs":           { "minVariants": 3, "placeholders": ["target", "dmg"] },
+    "battle.miss":               { "minVariants": 3, "placeholders": ["target"] },
+    "battle.crit.head":          { "minVariants": 3, "placeholders": ["target", "dmg"] },
+    "battle.crit.torso":         { "minVariants": 2, "placeholders": ["target", "dmg"] },
+    "battle.cover.tight":        { "minVariants": 3, "placeholders": [] },
+    "battle.flee.success":       { "minVariants": 2, "placeholders": [] },
+    "battle.flee.fail":          { "minVariants": 2, "placeholders": ["target"] },
+    "battle.enemy.hit":          { "minVariants": 3, "placeholders": ["attacker", "dmg"] },
+    "battle.enemy.miss":         { "minVariants": 2, "placeholders": ["attacker"] },
+    "battle.enemy.crit":         { "minVariants": 2, "placeholders": ["attacker", "dmg"] },
+    "battle.stance.aggressive":  { "minVariants": 2, "placeholders": [] },
+    "battle.stance.defensive":   { "minVariants": 2, "placeholders": [] },
+    "battle.stance.normal":      { "minVariants": 2, "placeholders": [] },
+    "battle.weapon.drop":        { "minVariants": 2, "placeholders": ["target"] },
+    "battle.limp":               { "minVariants": 2, "placeholders": ["target"] },
+    "battle.adapt":              { "minVariants": 2, "placeholders": ["target"] },
+    "battle.item.use":           { "minVariants": 3, "placeholders": ["item"] },
+    "battle.enemy.flee":         { "minVariants": 2, "placeholders": ["target"] },
+    "battle.enemy.berserk":      { "minVariants": 2, "placeholders": ["target"] },
+    "battle.victory":            { "minVariants": 3, "placeholders": ["xp", "loot"] },
+    "battle.defeat":             { "minVariants": 2, "placeholders": [] },
+    "battle.fatigue":            { "minVariants": 2, "placeholders": [] },
+    "battle.ambush":             { "minVariants": 2, "placeholders": ["target"] }
+  }
+}

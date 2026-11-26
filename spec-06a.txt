@@ -1,0 +1,147 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 6a из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — WebSocket для боя и синхронизация состояния после боя (HP, XP, level, inventory). НЕ реализуй анимации, звук, экран результата, экран смерти — это 6b. НЕ переписывай полноценный UI боя — только замена polling на WebSocket и синхронизация.
+
+ЭТАПЫ 1–5 (включая 5e и 5d-fix) СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log).
+- BattleStateSchema, applyAction (move/shoot/stance/reload/useItem/flee/endTurn/aim), runEnemyTurn (5e), engine.ts.
+- server/api/battle.ts: POST /start, GET /:id, GET /active, POST /:id/action, GET /:id/highlight, POST /:id/abandon.
+- data/config/battle.json: hit, damage, armor, penetration, distance, xp, healLimit, apCosts, ai.
+- data/level_table.json: 1–10.
+- formulas.ts: xpForKill, xpToNextLevel, applyLevelUp.
+- characters: id=1, 6 статов, hp_current, hp_max, ap_max, xp, level, money, location_id.
+- inventory: id, character_id=1, item_id, qty, equipped_slot (NULL | weapon|head|torso|jacket|legs|boots), UNIQUE(character_id, equipped_slot) WHERE equipped_slot IS NOT NULL.
+- client/js/screens/battle-map.js: polling 1с, дельта-лог, abandon. client/js/battle/hex-render.js.
+- client/js/main.js: роутинг character|map|location|inventory|battle-map.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono. min-width 1280px.
+- Все строки — только i18n (snake_case ключи).
+- Тесты: 256 зелёных, tsc чистый.
+
+ЗАДАЧА 6a — ТОЛЬКО:
+1. WebSocket-сервер (ws) + канал боя.
+2. Клиент подключается по WS вместо polling.
+3. Синхронизация после боя: HP, XP, level, inventory (патроны, аптечки, лут).
+4. Смерть игрока: defeat → hp_current = 1, money × 0.9, location_id = стартовый город. БЕЗ game over.
+
+НЕ РЕАЛИЗУЙ: анимации, звук, экран результата, экран смерти (6b), новые экраны.
+
+1. WEB-SOCKET СЕРВЕР (server/ws/battle.ts — новый файл):
+   - Использовать пакет `ws` (уже в зависимостях? — проверь; если нет, npm i ws).
+   - Fastify-плагин: fastify.register(websocketPlugin). 
+   - Эндпоинт: ws://localhost:3000/ws/battle/:battleId?lang=ru|en
+   - При подключении:
+     * Валидация: battleId существует, battle.status === 'active'.
+     * Если нет — close(4004, 'battle_not_found') или close(4000, 'battle_finished').
+     * Добавить соединение в room Map<battleId, Set<WebSocket>>.
+     * Отправить первое сообщение: { type: 'state', state: <BattleState с логом> }.
+   - Входящие сообщения от клиента:
+     * { type: 'action', action: Action, lang: 'ru'|'en' } →
+       - загрузить state, применить applyAction (для player), если action.type === 'end_turn' → затем runEnemyTurn
+       - если action даёт ошибку → { type: 'error', error, message }
+       - если ok → сохранить в БД (updateBattleState) → broadcast всем в room: { type: 'update', state, logEntries }
+       - если battle.status !== 'active' после действия → broadcast { type: 'end', state } и close(1000) всем в room
+     * { type: 'ping' } → { type: 'pong' } (keepalive, каждые 30с)
+   - При отключении — удалить из room; если room пуст — не закрывать battle (он в БД, можно вернуться).
+   - ВАЖНО: один и тот же battleId может иметь несколько соединений (например, при перезагрузке вкладки) — все получают обновления.
+   - ВАЖНО: не доверять клиенту. Валидировать action через Zod. Если action.type === 'end_turn' — сервер сам вызывает runEnemyTurn. Клиент не может отправить 'enemy_action'.
+
+2. СИНХРОНИЗАЦИЯ ПОСЛЕ БОЯ (server/game/battle/sync.ts — новый файл):
+   - syncAfterBattle(params: {
+       db; state: BattleState; items: Item[]; config: BattleConfig;
+       levelTable: LevelTable; lang: 'ru'|'en';
+     }): { character: Character; rewards: { xp, loot: {itemId, qty}[] }; }
+   - Вызывается, когда battle.status !== 'active' (victory | defeat | fled).
+   - Для victory:
+     * XP = sum(xpForKill за каждого мёртвого моба)
+     * character.xp += XP; цикл: пока character.xp >= xpToNextLevel(character.level) → applyLevelUp (5b), character.level++, character.xp -= xpToNextLevel(level), character.hp_current = hpMax (восстановление при levelup).
+     * Лут: для каждого мёртвого моба — прокрутить loot.guaranteed (100%) + loot.rare (шанс). Добавить в inventory через inventory-repo.addItem. Если loot.rare шанс — использовать rng (Math.random на сервере).
+     * character.hp_current = player.hp (после боя)
+     * Патроны: для equipped weapon, если weapon.charges !== undefined → списать разницу (maxCharges - weaponCharges) из inventory (ammoType). Упрощение: в 6a — только списать, если хватает; если не хватает — обнулить charges, лог «патроны кончились».
+     * Аптечки: уже списаны в API 5d (useItem). В 6a — не трогать.
+   - Для defeat:
+     * character.hp_current = 1
+     * character.money = floor(character.money × 0.9)
+     * character.location_id = world.startLocationId (стартовый город)
+     * XP не начисляется, лут не выдаётся.
+   - Для fled (abandon или flee):
+     * character.hp_current = player.hp (после боя)
+     * XP не начисляется, лут не выдаётся.
+     * location_id не меняется (игрок остаётся где был).
+   - Сохранить character через character-repo.updateCharacter. Сохранить inventory через inventory-repo (addItem для лута, removeItem для патронов).
+   - Вернуть { character, rewards }.
+
+3. API (server/api/battle.ts — доработать):
+   - После applyAction / runEnemyTurn, если status !== 'active' — вызвать syncAfterBattle. Это в REST-пути (POST /:id/action) и в WS-пути (через общий хелпер).
+   - POST /api/battle/:id/abandon — тоже вызвать syncAfterBattle (status = 'fled').
+   - Возвращать в ответе { state, rewards? } — если бой закончился, добавить rewards (xp, loot, levelUp: boolean, newLevel?).
+   - GET /api/battle/:id — если status !== 'active', вернуть { state, rewards } с rewards из последнего sync (сохранить в meta или в battle_sessions отдельным полем rewards_json — ДОБАВИТЬ колонку rewards_json TEXT в battle_sessions через ALTER TABLE; или проще — вычислять при запросе, если status !== 'active', из state.participants + mobs).
+
+   ВАЖНО: syncAfterBattle должен быть идемпотентным — если вызван дважды (REST + WS), не начислять XP дважды. Решение: флаг synced в battle_sessions (колонка synced_at TEXT NULL). Если synced_at IS NOT NULL — вернуть сохранённые rewards без повторного начисления.
+
+4. КЛИЕНТ (client/js/screens/battle-map.js — доработать):
+   - Заменить polling на WebSocket:
+     * При входе на экран: new WebSocket(`ws://${location.host}/ws/battle/${battleId}?lang=${currentLang}`)
+     * onmessage: 
+       - { type: 'state' } → отрисовать state
+       - { type: 'update' } → дельта-обновить (HP, лог, позиции), НЕ перерисовывать всё
+       - { type: 'end' } → показать экран результата (в 6a — просто сообщение + кнопка «Вернуться в локацию», полноценный экран — 6b)
+       - { type: 'error' } → показать inline-сообщение
+     * onclose: если code !== 1000 → reconnect через 2с (до 5 попыток).
+   - Действия: отправлять { type: 'action', action, lang } через WS. Ждать { type: 'update' } или { type: 'error' }.
+   - Кнопка «Покинуть бой»: POST /api/battle/:id/abandon (REST, как было) → после 200 — закрыть WS, перейти на экран location.
+   - Кнопка «Завершить ход»: { type: 'action', action: { type: 'end_turn' }, lang } → сервер сам вызовет runEnemyTurn → broadcast update.
+   - При перезагрузке страницы (?battle=<id>) — переподключиться к WS, получить { type: 'state' } → отрисовать.
+   - Индикатор соединения: зелёная точка «online» / красная «offline» в углу.
+   - Дельта-лог и скролл — оставить из 5d-fix.
+   - Убрать polling (clearInterval) — он больше не нужен.
+
+5. ТЕСТЫ (Vitest, минимум 10):
+   - WebSocket: подключение к активному бою → приходит { type: 'state' }.
+   - WebSocket: подключение к завершённому бою → close(4000).
+   - WebSocket: подключение к несуществующему → close(4004).
+   - WS action shoot (RNG фиксирован) → broadcast update с новым hp.
+   - WS action end_turn → broadcast update с ходами мобов (round +1).
+   - WS action с ошибкой (not_enough_ap) → { type: 'error' }.
+   - syncAfterBattle victory: XP начислен, levelup если xp >= xpToNextLevel, inventory пополнен лутом.
+   - syncAfterBattle defeat: hp_current = 1, money × 0.9, location_id = startLocationId.
+   - syncAfterBattle fled: hp_current = player.hp, XP не начислен, location_id не меняется.
+   - syncAfterBattle идемпотентен: повторный вызов не начисляет XP дважды.
+
+6. СХЕМА БД (server/db/schema.sql):
+   - ALTER TABLE battle_sessions ADD COLUMN synced_at TEXT NULL;
+   - ALTER TABLE battle_sessions ADD COLUMN rewards_json TEXT NULL;
+   - Обновить battle-repo: markSynced(db, id, rewards), getSyncStatus(db, id).
+
+7. i18n — новые ключи (RU + EN):
+   - ui.battle.ws.online ("online" / "online")
+   - ui.battle.ws.offline ("offline" / "offline")
+   - ui.battle.ws.reconnecting ("Переподключение…")
+   - ui.battle.ws.reconnect_failed ("Не удалось переподключиться. Нажмите «Покинуть бой» или обновите страницу.")
+   - ui.battle.result.victory_title ("Победа!")
+   - ui.battle.result.defeat_title ("Поражение")
+   - ui.battle.result.fled_title ("Вы покинули бой")
+   - ui.battle.result.xp ({xp})
+   - ui.battle.result.loot ({loot})
+   - ui.battle.result.levelup ({level})
+   - ui.battle.result.money_lost ({money})
+   - ui.battle.result.button_location ("Вернуться в локацию")
+   - battle.log.abandoned — уже есть.
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ реализуй: анимации, звук, экран результата с графикой, экран смерти (6b).
+- НЕ добавляй таблиц, кроме ALTER TABLE battle_sessions.
+- НЕ трогай engine.ts (applyAction, runEnemyTurn), формулы, hex, los, ai, schemas/{items,mobs,world}.ts.
+- НЕ трогай другие экраны (character, map, location, inventory).
+- НЕ хардкодь строки — только i18n.
+
+КРИТЕРИЙ ПРИЁМКИ 6a:
+1. npm run dev — сервер стартует, WebSocket доступен.
+2. Начать бой → экран карты, зелёная точка «online».
+3. Действия (move/shoot/endTurn) — через WS, без polling.
+4. Убить моба → status victory, экран результата (XP, лут, кнопка «Вернуться в локацию»), characters.xp/level обновлены, inventory пополнен.
+5. Умереть → defeat, hp_current = 1, money × 0.9, location_id = стартовый город.
+6. Закрыть вкладку в бою → открыть снова ?battle=<id> → WS переподключается, state восстановлен.
+7. Покинуть бой → abandon → статус fled, location_id не меняется.
+8. npm test — все зелёные (минимум 10 новых).
+9. tsc --noEmit чисто.
+10. Этапы 1–5 не сломаны.
+
+Начни с server/ws/battle.ts и server/game/battle/sync.ts.

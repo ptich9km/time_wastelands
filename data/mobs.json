@@ -1,0 +1,282 @@
+{
+  "version": "2.0",
+  "mobs": [
+    {
+      "id": "pipe_rat",
+      "nameKey": "mob.pipe_rat.name",
+      "descriptionKey": "mob.pipe_rat.desc",
+      "level": 1,
+      "hp": 18,
+      "stats": { "str": 3, "agi": 4, "int": 1, "end": 3, "per": 4, "intel": 1 },
+      "attack": { "min": 2, "max": 5, "pen": 0, "range": 1 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "rat_pelt", "weight": 1, "qty": [1, 1] },
+        "rare": [{ "itemId": "medkit", "weight": 1, "qty": [1, 1] }]
+      },
+      "spawnLevelRange": [1, 3],
+      "tags": ["animal", "rodent", "pack"]
+    },
+    {
+      "id": "ash_dog",
+      "nameKey": "mob.ash_dog.name",
+      "descriptionKey": "mob.ash_dog.desc",
+      "level": 1,
+      "hp": 22,
+      "stats": { "str": 4, "agi": 5, "int": 2, "end": 3, "per": 5, "intel": 1 },
+      "attack": { "min": 2, "max": 6, "pen": 0, "range": 1 },
+      "ai": "coward",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "scrap_metal", "weight": 1, "qty": [1, 1] },
+        "rare": [{ "itemId": "bandage", "weight": 1, "qty": [1, 2] }]
+      },
+      "spawnLevelRange": [1, 3],
+      "tags": ["animal", "dog", "pack"]
+    },
+    {
+      "id": "spore_youth",
+      "nameKey": "mob.spore_youth.name",
+      "descriptionKey": "mob.spore_youth.desc",
+      "level": 2,
+      "hp": 28,
+      "stats": { "str": 5, "agi": 3, "int": 2, "end": 4, "per": 4, "intel": 2 },
+      "attack": { "min": 3, "max": 7, "pen": 10, "range": 1 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [1, 1] },
+        "rare": [{ "itemId": "spore_antidote", "weight": 1, "qty": [1, 1] }]
+      },
+      "spawnLevelRange": [2, 4],
+      "tags": ["spore", "humanoid"]
+    },
+    {
+      "id": "rust_digger",
+      "nameKey": "mob.rust_digger.name",
+      "descriptionKey": "mob.rust_digger.desc",
+      "level": 2,
+      "hp": 30,
+      "stats": { "str": 6, "agi": 4, "int": 3, "end": 4, "per": 5, "intel": 2 },
+      "attack": { "min": 3, "max": 8, "pen": 10, "range": 1 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "old_coin", "weight": 1, "qty": [1, 3] },
+        "rare": [{ "itemId": "military_flashlight", "weight": 1, "qty": [1, 1] }]
+      },
+      "spawnLevelRange": [2, 4],
+      "tags": ["human", "bandit"]
+    },
+    {
+      "id": "rot_walker",
+      "nameKey": "mob.rot_walker.name",
+      "descriptionKey": "mob.rot_walker.desc",
+      "level": 3,
+      "hp": 40,
+      "stats": { "str": 7, "agi": 2, "int": 1, "end": 6, "per": 3, "intel": 1 },
+      "attack": { "min": 5, "max": 10, "pen": 5, "range": 1 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "scrap_metal", "weight": 1, "qty": [1, 2] },
+        "rare": [{ "itemId": "medkit", "weight": 1, "qty": [1, 1] }]
+      },
+      "spawnLevelRange": [3, 5],
+      "tags": ["spore", "undead"]
+    },
+    {
+      "id": "rat_elder",
+      "nameKey": "mob.rat_elder.name",
+      "descriptionKey": "mob.rat_elder.desc",
+      "level": 3,
+      "hp": 35,
+      "stats": { "str": 5, "agi": 7, "int": 2, "end": 4, "per": 7, "intel": 1 },
+      "attack": { "min": 4, "max": 9, "pen": 0, "range": 1 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "rat_pelt", "weight": 1, "qty": [1, 2] },
+        "rare": [{ "itemId": "stimpack", "weight": 1, "qty": [1, 1] }]
+      },
+      "spawnLevelRange": [3, 5],
+      "elite": { "hpMult": 1.5, "dmgMult": 1.3, "xpMult": 2, "rareChanceBonus": 0.15 },
+      "tags": ["animal", "rodent", "elite_candidate"]
+    },
+    {
+      "id": "bandit_scout",
+      "nameKey": "mob.bandit_scout.name",
+      "descriptionKey": "mob.bandit_scout.desc",
+      "level": 2,
+      "hp": 26,
+      "stats": { "str": 4, "agi": 6, "int": 4, "end": 3, "per": 6, "intel": 3 },
+      "attack": { "min": 3, "max": 7, "pen": 15, "range": 1 },
+      "ai": "coward",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "old_coin", "weight": 1, "qty": [2, 5] },
+        "rare": [{ "itemId": "ammo_light", "weight": 1, "qty": [1, 1] }]
+      },
+      "spawnLevelRange": [2, 4],
+      "tags": ["human", "bandit"]
+    },
+    {
+      "id": "bandit_brute",
+      "nameKey": "mob.bandit_brute.name",
+      "descriptionKey": "mob.bandit_brute.desc",
+      "level": 4,
+      "hp": 55,
+      "stats": { "str": 9, "agi": 3, "int": 2, "end": 7, "per": 4, "intel": 1 },
+      "attack": { "min": 7, "max": 14, "pen": 20, "range": 1 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "scrap_metal", "weight": 1, "qty": [2, 4] },
+        "rare": [{ "itemId": "army_vest", "weight": 1, "qty": [1, 1] }]
+      },
+      "spawnLevelRange": [4, 6],
+      "tags": ["human", "bandit", "elite_candidate"]
+    },
+    {
+      "id": "bandit_shooter",
+      "nameKey": "mob.bandit_shooter.name",
+      "descriptionKey": "mob.bandit_shooter.desc",
+      "level": 3,
+      "hp": 34,
+      "stats": { "str": 5, "agi": 6, "int": 4, "end": 4, "per": 7, "intel": 3 },
+      "attack": { "min": 5, "max": 10, "pen": 15, "range": 3 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "old_coin", "weight": 1, "qty": [2, 6] },
+        "rare": [
+          { "itemId": "ammo_light", "weight": 1, "qty": [1, 2] },
+          { "itemId": "army_pistol", "weight": 1, "qty": [1, 1] }
+        ]
+      },
+      "spawnLevelRange": [3, 5],
+      "tags": ["human", "bandit", "ranged"]
+    },
+    {
+      "id": "spore_shooter",
+      "nameKey": "mob.spore_shooter.name",
+      "descriptionKey": "mob.spore_shooter.desc",
+      "level": 4,
+      "hp": 42,
+      "stats": { "str": 5, "agi": 5, "int": 5, "end": 5, "per": 8, "intel": 2 },
+      "attack": { "min": 6, "max": 11, "pen": 10, "range": 4 },
+      "ai": "coward",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [1, 2] },
+        "rare": [{ "itemId": "spore_antidote", "weight": 1, "qty": [1, 1] }]
+      },
+      "spawnLevelRange": [4, 6],
+      "tags": ["spore", "humanoid", "ranged"]
+    },
+    {
+      "id": "spore_hound",
+      "nameKey": "mob.spore_hound.name",
+      "descriptionKey": "mob.spore_hound.desc",
+      "level": 4,
+      "hp": 48,
+      "stats": { "str": 7, "agi": 6, "int": 2, "end": 5, "per": 6, "intel": 1 },
+      "attack": { "min": 6, "max": 12, "pen": 0, "range": 1 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [1, 2] },
+        "rare": [{ "itemId": "spore_cloak", "weight": 1, "qty": [1, 1] }]
+      },
+      "spawnLevelRange": [4, 6],
+      "tags": ["spore", "animal", "elite_candidate"]
+    },
+    {
+      "id": "spore_priest",
+      "nameKey": "mob.spore_priest.name",
+      "descriptionKey": "mob.spore_priest.desc",
+      "level": 5,
+      "hp": 60,
+      "stats": { "str": 6, "agi": 4, "int": 8, "end": 6, "per": 8, "intel": 3 },
+      "attack": { "min": 7, "max": 13, "pen": 15, "range": 1 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [2, 3] },
+        "rare": [
+          { "itemId": "stimpack", "weight": 1, "qty": [1, 1] },
+          { "itemId": "military_flashlight", "weight": 1, "qty": [1, 1] }
+        ]
+      },
+      "spawnLevelRange": [5, 7],
+      "tags": ["spore", "humanoid", "elite_candidate"]
+    },
+    {
+      "id": "rust_hulk",
+      "nameKey": "mob.rust_hulk.name",
+      "descriptionKey": "mob.rust_hulk.desc",
+      "level": 6,
+      "hp": 90,
+      "stats": { "str": 12, "agi": 2, "int": 1, "end": 9, "per": 5, "intel": 1 },
+      "attack": { "min": 10, "max": 18, "pen": 10, "range": 1 },
+      "ai": "aggressive",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "scrap_metal", "weight": 1, "qty": [3, 5] },
+        "rare": [
+          { "itemId": "army_vest", "weight": 1, "qty": [1, 1] },
+          { "itemId": "rusty_carbine", "weight": 1, "qty": [1, 1] }
+        ]
+      },
+      "spawnLevelRange": [6, 8],
+      "elite": { "hpMult": 2, "dmgMult": 1.5, "xpMult": 3, "rareChanceBonus": 0.25 },
+      "tags": ["spore", "mutant", "boss_candidate"]
+    },
+    {
+      "id": "gray_widow",
+      "nameKey": "mob.gray_widow.name",
+      "descriptionKey": "mob.gray_widow.desc",
+      "level": 4,
+      "hp": 32,
+      "stats": { "str": 4, "agi": 9, "int": 2, "end": 4, "per": 7, "intel": 1 },
+      "attack": { "min": 5, "max": 10, "pen": 0, "range": 1 },
+      "ai": "coward",
+      "moveAp": 4,
+      "attackAp": 8,
+      "xp": 0,
+      "loot": {
+        "guaranteed": { "itemId": "spore_sample", "weight": 1, "qty": [1, 1] },
+        "rare": [{ "itemId": "spore_antidote", "weight": 1, "qty": [1, 2] }]
+      },
+      "spawnLevelRange": [4, 6],
+      "tags": ["spore", "insect"]
+    }
+  ]
+}

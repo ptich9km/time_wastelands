@@ -1,0 +1,156 @@
+Ты — senior full-stack разработчик. Реализуй ШАГ 7 из ТЗ v2.0 игры «Пустошь: Ржавый Предел» — спавн мобов, encounter на пустошах, элиты, респаун. ТОЛЬКО ЭТО. Не трогай бой, WS, sync, engine, формулы.
+
+ЭТАПЫ 1–6 (включая 6a, 6b, 6b-fix) СДЕЛАНЫ. Не переделывай. Вот что есть:
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log).
+- world.json: 12 локаций, type (city|waste|ruins|mine|road|camp), dangerLevel (0-100), levelRange [min,max], spawnTable [{mobId, weight, min, max}], cover, anomaly, art. battleMap НЕТ (используется дефолт 10×10 в 5a).
+- mobs.json: 14 мобов, spawnLevelRange [min,max], elite?: {hpMult, dmgMult, xpMult, rareChanceBonus}, tags (проверить, есть ли "pack" у pipe_rat и ash_dog; если нет — добавить).
+- world_state: location_id, respawn_at, last_visited_at, updated_at.
+- server/api/world.ts: POST /api/travel — мгновенный, без encounter.
+- server/api/battle.ts: POST /start { mobIds }, GET /:id, GET /active, POST /:id/action, POST /:id/abandon. BattleMap — дефолт 10×10 с 3–4 препятствиями.
+- server/db/world-repo.ts: getWorldState, markVisited, openNeighbors, getVisibleLocations, cleanupWorldState.
+- characters: id=1, hp_current, hp_max, location_id.
+- BattleState.Participant: id, kind, refId, stats, hp, hpMax, ap, apMax, hex, position, facing, equipment, effects, mobLevel?, mobNameKey?, characterName?. Поля isElite НЕТ.
+- syncAfterBattle (6a): учитывает rareChanceBonus, но проверь, что isElite доходит.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono.
+- Все строки — только i18n (snake_case).
+- 280 тестов зелёные, tsc чистый.
+
+ЗАДАЧА 7 — ТОЛЬКО спавн и encounter.
+
+1. КОНФИГ (data/config/battle.json — добавить секцию "spawn"):
+{
+  "spawn": {
+    "encounterChanceMultiplier": 1.0,
+    "packMin": 3,
+    "packMax": 5,
+    "soloMin": 1,
+    "soloMax": 3,
+    "eliteChance": 0.10,
+    "respawnMinMinutes": 10,
+    "respawnMaxMinutes": 15
+  }
+}
+Zod-схема SpawnConfigSchema, валидация при загрузке.
+
+2. ЛОГИКА СПАВНА (server/game/world/spawn.ts — новый файл):
+
+function rollEncounter(params: {
+  location: Location;
+  worldState: WorldState | null;
+  config: SpawnConfig;
+  rng: () => number;
+}): { encounter: false } | { encounter: true; mobIds: string[]; isElite: boolean[] }
+
+  - Если location.type === 'city' → { encounter: false }.
+  - Если worldState?.respawnAt и now < respawnAt → { encounter: false }.
+  - chance = (location.dangerLevel / 100) × config.encounterChanceMultiplier. Clamp 0..1.
+  - if rng() >= chance → { encounter: false }.
+  - Выбрать запись из spawnTable взвешенно по weight. Если spawnTable пуст → { encounter: false }.
+  - Проверить, что mob.spawnLevelRange пересекается с location.levelRange. Если нет — { encounter: false } (не спавнить).
+  - count = mob.tags.includes('pack') ? randInt(config.packMin, config.packMax) : randInt(config.soloMin, config.soloMax).
+  - Для каждого из count мобов — ролл элиты: if mob.elite && rng() < config.eliteChance → isElite[i] = true.
+  - Вернуть { encounter: true, mobIds: Array(count).fill(mobId), isElite }.
+
+function applyElite(mob: Mob, isElite: boolean): Mob
+  - если !isElite → mob (как есть).
+  - hp = floor(mob.hp × mob.elite.hpMult)
+  - attack.min = floor(mob.attack.min × mob.elite.dmgMult)
+  - attack.max = floor(mob.attack.max × mob.elite.dmgMult)
+  - вернуть копию mob с изменёнными полями.
+
+function randInt(min, max) — inclusive.
+
+3. ОБНОВИТЬ BattleState.Participant (server/game/battle/state.ts):
+  - Добавить опциональное поле isElite?: boolean (Zod: z.boolean().optional()).
+  - В 5a при создании BattleState для мобов — если isElite[i] === true, применить applyElite и записать isElite: true.
+  - ВАЖНО: это единственное изменение схемы. Остальное не трогать.
+
+4. ОБНОВИТЬ POST /api/travel (server/api/world.ts):
+  - После canTravel (валидация) и ДО обновления characters.location_id:
+    * rollEncounter({ location: target, worldState: getWorldState(target), config, rng: Math.random })
+    * Если encounter: true →
+      - Проверить, что у персонажа нет активного боя. Если есть → 409 battle_already_active (encounter отменяется, переход не происходит; клиент должен сначала закрыть бой).
+      - Создать BattleState через тот же путь, что POST /api/battle/start, но с mobIds и isElite.
+      - Обновить characters.location_id = target (игрок дошёл, encounter на новой локации).
+      - Ответ: 200 { character, fromLocationId, toLocationId, battle: BattleState }.
+    * Если encounter: false →
+      - Обновить characters.location_id = target.
+      - Ответ: 200 { character, fromLocationId, toLocationId, battle: null }.
+  - ВАЖНО: markVisited и openNeighbors — как было.
+
+5. ОБНОВИТЬ POST /api/battle/start:
+  - Опциональный параметр isElite: boolean[] (из rollEncounter). Если не передан — все false.
+  - Для каждого моба: if isElite[i] → applyElite(mob, true), и в Participant записать isElite: true.
+  - ВАЖНО: обратная совместимость — старые вызовы без isElite работают.
+
+6. РЕСПАУН (server/db/world-repo.ts):
+  - markRespawn(db, locationId, minutes) → UPSERT world_state: respawn_at = now + minutes, updated_at = now.
+  - Вызывать после боя (victory/defeat/fled) для state.context.locationId: minutes = randInt(respawnMin, respawnMax).
+  - Место вызова: в service.ts (общий поток action), после syncAfterBattle, если battle.status !== 'active'.
+  - ВАЖНО: если бой на локации, где нет world_state — создать (через upsert).
+  - getWorldState уже есть.
+
+7. ОБНОВИТЬ syncAfterBattle (server/game/battle/sync.ts):
+  - Проверить, что rareChanceBonus от элиты учитывается: если participant.isElite === true, rareChance += mob.elite.rareChanceBonus (это уже есть, но убедиться, что Participant.isElite доходит до sync).
+  - Если нет — добавить.
+
+8. КЛИЕНТ (client/js/screens/location.js и map.js):
+  - После POST /api/travel:
+    * Если battle !== null → переключить на battle-map (по battle.id).
+    * Если battle === null → переключить на location (как сейчас).
+  - На карте: при клике на соседнюю локацию — показать «В пути…» (0.5с) → POST /api/travel → переход (в бой или локацию).
+  - На экране локации: если worldState.respawnAt в будущем — показать «Мобы появятся через ~N мин.» (опционально, но полезно).
+  - Никаких новых экранов.
+
+9. ДАННЫЕ (data/mobs.json — доработать):
+  - Добавить тег "pack" к pipe_rat (стайный). Если уже есть — ок.
+  - Добавить тег "pack" к ash_dog (псы сбиваются в стаи). 
+  - Остальные — без "pack".
+  - В data/config/battle.json — секция spawn (см. п.1).
+
+10. i18n — новые ключи (RU + EN):
+  - ui.travel.encounter («Засада!» / «Ambush!»)
+  - ui.travel.encounter_elite («Элитный противник!» / «Elite enemy!»)
+  - ui.location.respawn_wait («Мобы появятся через ~{min} мин.» / «Mobs will appear in ~{min} min.»)
+  - ui.location.respawn_ready («Мобы активны.» / «Mobs are active.»)
+  - battle.log.elite_spawn («{mob} выглядит крупнее обычного…» / «{mob} looks larger than usual…»)
+
+11. ТЕСТЫ (Vitest, минимум 15):
+  - rollEncounter: city → encounter false.
+  - rollEncounter: respawn_at в будущем → encounter false.
+  - rollEncounter: rng() >= chance → encounter false.
+  - rollEncounter: rng() < chance → encounter true, mobIds.length > 0.
+  - rollEncounter: pipe_rat (pack) → 3–5 мобов.
+  - rollEncounter: mob.spawnLevelRange не пересекается → encounter false (или пропуск).
+  - rollEncounter: eliteChance 1.0 (форс) → все isElite true.
+  - applyElite: hp × hpMult, attack × dmgMult.
+  - POST /api/travel: encounter true → battle создан, character.location_id обновлён.
+  - POST /api/travel: encounter false → battle null.
+  - POST /api/travel: активный бой → 409 (encounter отменяется).
+  - Респаун: после боя world_state.respawn_at в будущем.
+  - Элита в BattleState: Participant.isElite === true, hp увеличен.
+  - battleMap: если в world.json нет battleMap → дефолт 10×10 (как в 5a).
+  - syncAfterBattle: isElite → rareChance += rareChanceBonus.
+
+ГРАНИЦЫ ЭТАПА:
+- НЕ трогай бой (applyAction, runEnemyTurn), WS, engine, формулы, hex, los, ai.
+- НЕ добавляй таблиц.
+- НЕ меняй schema.sql.
+- НЕ хардкодь строки — только i18n.
+- НЕ реализуй battleMap для локаций (опционально, можно отложить).
+
+КРИТЕРИЙ ПРИЁМКИ 7:
+1. npm run dev — сервер стартует.
+2. Переход в пустошь (dangerLevel 25) — ~25% шанс encounter (проверить 20 переходов, ~5 боёв).
+3. В городе — encounter не срабатывает.
+4. Encounter с pipe_rat — 3–5 мобов.
+5. Encounter с одиночным мобом — 1–3.
+6. Элита — ~10% (проверить 20 боёв, 2 элиты).
+7. После боя — респаун 10–15 мин, повторный переход не даёт encounter, пока не истекло.
+8. POST /api/travel возвращает battle (если encounter) или null.
+9. Клиент переключается на battle-map при encounter.
+10. npm test — все зелёные (минимум 15 новых).
+11. tsc --noEmit чисто.
+12. Этапы 1–6 не сломаны.
+
+Начни с server/game/world/spawn.ts и data/config/battle.json (секция spawn).

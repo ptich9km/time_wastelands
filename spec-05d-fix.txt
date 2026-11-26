@@ -1,0 +1,84 @@
+Ты — senior full-stack разработчик. Исправь ДВА бага из шага 5d игры «Пустошь: Ржавый Предел». Не переделывай ничего другого. Не начинай 5e.
+
+КОНТЕКСТ (что уже есть):
+- Fastify :3000, SQLite (meta, characters, world_state, inventory, battle_sessions, battle_log).
+- BattleStateSchema, applyAction (move/shoot/stance/reload/useItem/flee/endTurn/aim), engine.ts, runEnemyTurn — НЕТ (это 5e, не трогай).
+- server/api/battle.ts: POST /start, GET /:id, GET /active, POST /:id/action, GET /:id/highlight.
+- client/js/screens/battle-map.js: polling 1с, панель действий, лог (20 последних записей, перерисовывается целиком через innerHTML).
+- client/js/battle/hex-render.js.
+- client/js/main.js: роутинг character|map|location|inventory|battle-map.
+- Стиль: #1a1614 / #2a2420 / #3a322c / #d4c9b8 / #c9a227 / #a83232. Inter + JetBrains Mono.
+- Все строки — только i18n (snake_case ключи).
+
+БАГ 1: игрок не может выйти из экрана боя. Нет кнопки «Покинуть бой», бой остаётся активным, GET /api/battle/active возвращает его, игрок застревает.
+
+БАГ 2: лог боя сбивается вниз. Polling каждую 1с перерисовывает лог через innerHTML, scrollTop сбрасывается, игрок не может прочитать старые записи.
+
+ИСПРАВЛЕНИЯ:
+
+1. СЕРВЕР — новый эндпоинт POST /api/battle/:id/abandon (server/api/battle.ts):
+   - body не нужен.
+   - Если бой не найден → 404 battle_not_found.
+   - Если battle.status !== 'active' → 400 battle_finished.
+   - Установить status = 'fled', result = 'fled', phase = 'finished', updated_at = now.
+   - Записать в battle_log: type 'flee', actor 'system', text t('battle.log.abandoned', lang, {}).
+   - Сохранить через updateBattleState + appendLog.
+   - Ответ: 200 { state }.
+   - ВАЖНО: HP игрока, XP, лут, деньги, inventory — НЕ ТРОГАТЬ. Это просто «вышел из боя».
+
+2. КЛИЕНТ — battle-map.js:
+   - Кнопка «Покинуть бой» в углу панели (или сверху, рядом с «Ход: ...»).
+   - Клик → confirm() через модалку (не нативный confirm — свой мини-модал: «Покинуть бой? Прогресс не сохранится. HP, опыт и лут не будут начислены. [Отмена] [Покинуть]»).
+   - Подтверждение → POST /api/battle/:id/abandon → 200 { state } → переключить на экран location (по state.context.locationId) через main.js.
+   - После abandon polling останавливается (clearInterval).
+
+3. КЛИЕНТ — лог боя (battle-map.js):
+   - Заменить перерисовку innerHTML на дельта-рендер:
+     * Хранить lastLogLength и lastRenderedLogId (id последней записи).
+     * При обновлении state: получить новые записи (state.log.slice(lastRenderedLogId)) — если в state.log есть id. Если id нет — использовать lastLogLength (slice по длине).
+     * Для каждой новой записи — создать <div class="log-entry log-<type>"> и appendChild в конец.
+     * Обновить lastLogLength / lastRenderedLogId.
+   - Авто-скролл: перед appendChild проверить, находится ли пользователь у нижнего края:
+     * atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30
+     * Если atBottom → после append el.scrollTop = el.scrollHeight.
+     * Если не atBottom → НЕ скроллить, показать кнопку «↓ новые сообщения» (если есть новые записи).
+   - Кнопка «↓ новые сообщения»: absolute в правом нижнем углу лога, показывается только если !atBottom && есть новые записи. Клик → scrollTop = scrollHeight, скрыть кнопку.
+   - При первом рендере (лог пустой) — сразу scrollTop = scrollHeight.
+
+4. i18n (RU + EN, snake_case):
+   - battle.log.abandoned
+   - ui.battle.button.abandon ("Покинуть бой" / "Abandon battle")
+   - ui.battle.abandon.confirm_title ("Покинуть бой?")
+   - ui.battle.abandon.confirm_text ("Прогресс не сохранится. HP, опыт и лут не будут начислены.")
+   - ui.battle.abandon.confirm_yes ("Покинуть")
+   - ui.battle.abandon.confirm_no ("Отмена")
+   - ui.battle.log.new_messages ("↓ новые сообщения" / "↓ new messages")
+
+5. ТЕСТЫ (Vitest) — минимум 4:
+   - POST /api/battle/:id/abandon: активный бой → 200, status 'fled', в БД.
+   - POST /api/battle/:id/abandon: завершённый бой → 400 battle_finished.
+   - POST /api/battle/:id/abandon: несуществующий → 404.
+   - После abandon GET /api/battle/active → 404 (нет активного боя).
+   - После abandon POST /api/battle/start → 201 (можно начать новый бой).
+
+6. НЕ ТРОГАЙ:
+   - formulas.ts, hex.ts, los.ts, actions.ts, engine.ts (applyAction)
+   - runEnemyTurn (это 5e, ещё не написан)
+   - schemas/
+   - data/ (кроме i18n)
+   - другие экраны (character, map, location, inventory)
+   - 5a/5b/5c/5d тесты (кроме добавления новых)
+
+КРИТЕРИЙ ПРИЁМКИ 5d-fix:
+1. npm run dev — сервер стартует.
+2. Начать бой → экран карты.
+3. Нажать «Покинуть бой» → модалка → подтвердить → экран локации, бой закрыт.
+4. GET /api/battle/active → 404.
+5. POST /api/battle/start снова → 201 (можно начать новый бой).
+6. Прокрутить лог вверх → новые записи (если есть) не сбивают скролл; кнопка «↓ новые сообщения» появляется.
+7. Клик по «↓ новые сообщения» → скролл вниз, кнопка исчезает.
+8. npm test — все зелёные (минимум 4 новых).
+9. tsc --noEmit чисто.
+10. Этапы 1–5d не сломаны.
+
+Начни с server/api/battle.ts (эндпоинт abandon) и client/js/screens/battle-map.js (кнопка + дельта-рендер лога).
