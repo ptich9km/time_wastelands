@@ -38,6 +38,7 @@ export const MobSchema = z.object({
   id: IdSchema,
   nameKey: I18nKey,
   descriptionKey: I18nKey.optional(),
+  iconImage: z.string().min(1).optional(),
   level: z.number().int().min(1).max(50),
   hp: z.number().int().min(1),
   stats: MobStatsSchema,

@@ -2,6 +2,7 @@
 
 import { getInventory, equipItem, unequipItem } from '../api.js';
 import { t } from '../i18n.js';
+import { itemIcon } from '../icons.js';
 
 const RARITY_COLORS = {
   common: '#d4c9b8',
@@ -196,9 +197,7 @@ export function renderInventory(root, options) {
       if (eq) {
         const entry = itemByInventoryId(eq.inventoryId);
         if (entry) {
-          const icon = document.createElement('span');
-          icon.className = 'equip-slot-icon';
-          icon.textContent = entry.item.icon;
+          const icon = itemIcon(entry.item, '❓', 'equip-slot-icon item-icon');
           const name = document.createElement('span');
           name.className = 'equip-slot-name';
           name.textContent = t(entry.item.nameKey);
@@ -228,9 +227,7 @@ export function renderInventory(root, options) {
       const card = document.createElement('div');
       card.className = 'inv-item';
       if (entry.equippedSlot) card.classList.add('equipped');
-      const icon = document.createElement('span');
-      icon.className = 'inv-item-icon';
-      icon.textContent = entry.item?.icon ?? '❓';
+      const icon = itemIcon(entry.item, '❓', 'inv-item-icon item-icon');
       const name = document.createElement('span');
       name.className = 'inv-item-name';
       name.textContent = t(entry.item?.nameKey ?? entry.itemId);

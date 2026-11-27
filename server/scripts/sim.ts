@@ -1,4 +1,4 @@
-// Stage 10a: balance simulation built on the real battle engine. Every fight
+// Stage 10a / 10a-fix: balance simulation built on the real battle engine. Every fight
 // runs a full turn cycle (move/shoot/endTurn + runEnemyTurn) on a 10x10 map,
 // using the same configs as the live server. Warnings never fail the script.
 
@@ -232,8 +232,12 @@ function report(label: string, mobIds: string[], expected: string, check: (winra
   return { winrate, avgRounds };
 }
 
-const r1 = report('1 ур. vs pipe_rat', ['pipe_rat'], '70–85%', (w) => w >= 70 && w <= 85);
+const r1 = report('1 ур. vs pipe_rat', ['pipe_rat'], '85–100%', (w) => w >= 85 && w <= 100);
 report('1 ур. vs 3 × pipe_rat', ['pipe_rat', 'pipe_rat', 'pipe_rat'], '20–50%', (w) => w >= 20 && w <= 50);
+report('1 ур. vs 5 × pipe_rat', Array(5).fill('pipe_rat'), '0–20%', (w) => w <= 20);
+report('1 ур. vs 8 × pipe_rat', Array(8).fill('pipe_rat'), '0–10%', (w) => w <= 10);
+report('1 ур. vs 12 × pipe_rat', Array(12).fill('pipe_rat'), '0%', (w) => w === 0);
+report('1 ур. vs 16 × pipe_rat', Array(16).fill('pipe_rat'), '0%', (w) => w === 0);
 report('1 ур. vs rust_hulk (6 ур.)', ['rust_hulk'], '<= 20%', (w) => w <= 20);
 if (r1.avgRounds > 6) {
   console.log(`⚠️  ПРЕДУПРЕЖДЕНИЕ: средняя длина боя 1v1 = ${r1.avgRounds.toFixed(2)} > 6 раундов`);

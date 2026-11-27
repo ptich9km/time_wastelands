@@ -30,6 +30,17 @@ export type EncounterRoll =
   | { encounter: false }
   | { encounter: true; mobIds: string[]; isElite: boolean[] };
 
+// Stage 10a-fix: the first band whose maxLevel covers the location wins.
+// The fallback keeps older/incomplete configs usable at runtime; the Zod
+// schema requires at least one band for data loaded from battle.json.
+export function packSizeForLevel(config: SpawnConfig, level: number): { min: number; max: number } {
+  const bands = config.packSizeByLevel;
+  const band = bands.find((b) => level <= b.maxLevel)
+    ?? bands[bands.length - 1]
+    ?? { min: config.packMin, max: config.packMax };
+  return { min: band.min, max: band.max };
+}
+
 // The spec signature omits the mob list, but the level-range/tags/elite checks
 // are impossible without it — mobs is passed in explicitly.
 export function rollEncounter(params: {
@@ -62,9 +73,12 @@ export function rollEncounter(params: {
   const [mobMin, mobMax] = mob.spawnLevelRange;
   if (mobMax < locMin || mobMin > locMax) return { encounter: false };
 
-  const count = mob.tags.includes('pack')
-    ? randInt(config.packMin, config.packMax, rng)
-    : randInt(config.soloMin, config.soloMax, rng);
+  // A location's level is its upper bound (levelRange[1]).
+  const level = location.levelRange[1];
+  const range = mob.tags.includes('pack')
+    ? packSizeForLevel(config, level)
+    : { min: config.soloMin, max: config.soloMax };
+  const count = randInt(range.min, range.max, rng);
   const isElite = Array.from(
     { length: count },
     () => mob.elite !== undefined && rng() < config.eliteChance,

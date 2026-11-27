@@ -23,6 +23,7 @@ export async function npcRoutes(app: FastifyInstance): Promise<void> {
           id: npc.id,
           nameKey: npc.nameKey,
           role: npc.role,
+          ...(npc.portrait ? { portrait: npc.portrait } : {}),
           line: dialog.line,
           ...(dialog.rumor ? { rumor: dialog.rumor } : {}),
         },

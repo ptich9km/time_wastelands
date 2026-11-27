@@ -92,6 +92,12 @@
     "encounterChanceMultiplier": 1.0,
     "packMin": 3,
     "packMax": 5,
+    "packSizeByLevel": [
+      { "maxLevel": 2, "min": 3, "max": 5 },
+      { "maxLevel": 5, "min": 5, "max": 8 },
+      { "maxLevel": 8, "min": 8, "max": 12 },
+      { "maxLevel": 99, "min": 10, "max": 16 }
+    ],
     "soloMin": 1,
     "soloMax": 3,
     "eliteChance": 0.10,

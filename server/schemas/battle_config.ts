@@ -122,17 +122,27 @@ export const AiConfigSchema = z.object({
   coward: AiProfileConfigSchema,
 });
 
+// Stage 10a-fix: pack size scales with the location's upper level bound.
+export const PackSizeBandSchema = z.object({
+  maxLevel: z.number().int().min(1),
+  min: z.number().int().min(1),
+  max: z.number().int().min(1),
+}).refine((b) => b.min <= b.max, 'spawn.packSizeByLevel: min <= max');
+
 // Stage 7: mob spawn / encounter tuning (data/config/battle.json → spawn).
 export const SpawnConfigSchema = z.object({
   encounterChanceMultiplier: z.number().min(0),
   packMin: z.number().int().min(1),
   packMax: z.number().int().min(1),
+  packSizeByLevel: z.array(PackSizeBandSchema).min(1),
   soloMin: z.number().int().min(1),
   soloMax: z.number().int().min(1),
   eliteChance: z.number().min(0).max(1),
   respawnMinMinutes: z.number().int().min(1),
   respawnMaxMinutes: z.number().int().min(1),
 }).refine((c) => c.packMin <= c.packMax, 'spawn.packMin <= packMax')
+  .refine((c) => c.packSizeByLevel.every((b, i, all) => i === 0 || all[i - 1].maxLevel < b.maxLevel),
+    'spawn.packSizeByLevel: maxLevel must increase')
   .refine((c) => c.soloMin <= c.soloMax, 'spawn.soloMin <= soloMax')
   .refine((c) => c.respawnMinMinutes <= c.respawnMaxMinutes, 'spawn.respawnMinMinutes <= max');
 
@@ -160,5 +170,6 @@ export type XpConfig = z.infer<typeof XpConfigSchema>;
 export type ApCosts = z.infer<typeof ApCostsSchema>;
 export type AiProfileConfig = z.infer<typeof AiProfileConfigSchema>;
 export type AiConfig = z.infer<typeof AiConfigSchema>;
+export type PackSizeBand = z.infer<typeof PackSizeBandSchema>;
 export type SpawnConfig = z.infer<typeof SpawnConfigSchema>;
 export type BattleConfig = z.infer<typeof BattleConfigSchema>;

@@ -1,0 +1,24 @@
+Ты — senior full-stack разработчик. Расширь ШАГ 10a-fix для игры «Пустошь: Ржавый Предел»: подними урон pipe_rat и добавь масштабирование размера стаи (pack size) от уровня локации. ТОЛЬКО ЭТО. Не трогай UI, README (кроме раздела баланса), другие данные.
+
+ЭТАПЫ 1–10b СДЕЛАНЫ. Не переделывай. Вот что есть:
+- data/mobs.json: pipe_rat (level 1, hp 18, attack 2–5, range 1, тег "pack").
+- server/game/world/spawn.ts: rollEncounter использует config.spawn.packMin/packMax (фиксированные 3–5) для мобов с тегом "pack".
+- data/config/battle.json: секция "spawn" с packMin: 3, packMax: 5, soloMin: 1, soloMax: 3.
+- server/scripts/sim.ts: сценарии 1v1, 1v3, 1v5 pipe_rat, 1 vs rust_hulk. Цели: 1v1 85–100%, 1v3 20–50%, 1v5 0–20%, 1 vs rust_hulk ≤20%.
+- 383 теста зелёные.
+
+ЗАДАЧА 10a-fix-v2:
+
+1.  **Урон pipe_rat** (data/mobs.json):
+    - `pipe_rat.attack` → `{ "min": 4, "max": 8, "pen": 0, "range": 1 }` (было 2–5).
+    - Не трогай hp, level, range, moveAp, attackAp, ai, теги, лут.
+
+2.  **Масштабирование стаи** (data/config/battle.json → секция "spawn"):
+    - Добавить новую секцию `packSizeByLevel`. Пример структуры:
+      ```json
+      "packSizeByLevel": [
+        { "maxLevel": 2, "min": 3, "max": 5 },
+        { "maxLevel": 5, "min": 5, "max": 8 },
+        { "maxLevel": 8, "min": 8, "max": 12 },
+        { "maxLevel": 99, "min": 10, "max": 16 }
+      ]

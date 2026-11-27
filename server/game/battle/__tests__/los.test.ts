@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { hasLineOfSight, canMoveTo, reachableHexes, lineHexes, inBounds } from '../los';
+import {
+  hasLineOfSight, hasMeleePath, canMoveTo, reachableHexes, lineHexes, inBounds,
+} from '../los';
 import { hexKey, type HexCoord } from '../hex';
 import type { Obstacle } from '../state';
 
@@ -12,12 +14,28 @@ const wall = (q: number, r: number): Obstacle => ({
   type: 'wall',
   blocksLos: true,
   blocksMove: true,
+  blocksMelee: true,
 });
 const crate = (q: number, r: number): Obstacle => ({
   hex: { q, r },
   type: 'crate',
   blocksLos: false,
   blocksMove: true,
+  blocksMelee: false,
+});
+const barricade = (q: number, r: number): Obstacle => ({
+  hex: { q, r },
+  type: 'barricade',
+  blocksLos: false,
+  blocksMove: true,
+  blocksMelee: true,
+});
+const bush = (q: number, r: number): Obstacle => ({
+  hex: { q, r },
+  type: 'bush',
+  blocksLos: false,
+  blocksMove: false,
+  blocksMelee: false,
 });
 
 function los(from: HexCoord, to: HexCoord, obstacles: Obstacle[] = []): boolean {
@@ -76,6 +94,39 @@ describe('hasLineOfSight', () => {
 
   it('lineHexes соседей — пусто', () => {
     expect(lineHexes({ q: 1, r: 1 }, { q: 2, r: 1 })).toEqual([]);
+  });
+});
+
+describe('hasMeleePath', () => {
+  const melee = (
+    from: HexCoord,
+    to: HexCoord,
+    obstacles: Obstacle[] = [],
+  ): boolean => hasMeleePath({ from, to, obstacles, mapWidth: W, mapHeight: H });
+
+  it('путь без препятствий → true', () => {
+    expect(melee({ q: 0, r: 2 }, { q: 4, r: 2 })).toBe(true);
+  });
+
+  it('barricade на линии → false, хотя LOS сквозь неё проходит', () => {
+    const obstacles = [barricade(2, 2)];
+    expect(melee({ q: 0, r: 2 }, { q: 4, r: 2 }, obstacles)).toBe(false);
+    expect(los({ q: 0, r: 2 }, { q: 4, r: 2 }, obstacles)).toBe(true);
+  });
+
+  it('crate и bush на линии не блокируют удар', () => {
+    expect(melee({ q: 0, r: 2 }, { q: 4, r: 2 }, [crate(2, 2)])).toBe(true);
+    expect(melee({ q: 0, r: 2 }, { q: 4, r: 2 }, [bush(2, 2)])).toBe(true);
+  });
+
+  it('wall на линии → false', () => {
+    expect(melee({ q: 0, r: 2 }, { q: 4, r: 2 }, [wall(2, 2)])).toBe(false);
+  });
+
+  it('позиционная форма hasMeleePath(from, to, obstacles)', () => {
+    expect(
+      hasMeleePath({ q: 0, r: 2 }, { q: 4, r: 2 }, [barricade(2, 2)]),
+    ).toBe(false);
   });
 });
 

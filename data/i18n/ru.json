@@ -334,6 +334,7 @@
   "battle.error.no_weapon": "Оружие не экипировано.",
   "battle.error.no_ammo": "Нет патронов — нужно перезарядиться.",
   "battle.error.no_line_of_sight": "Цель вне линии видимости.",
+  "battle.error.melee_blocked": "Баррикада мешает удару",
   "battle.error.out_of_range": "Цель вне дальности оружия.",
   "battle.error.occupied": "Гекс занят.",
   "battle.error.not_adjacent": "Двигаться можно только на соседний гекс.",

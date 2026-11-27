@@ -14,6 +14,24 @@ function svgEl(tag, attrs = {}) {
   return el;
 }
 
+function svgSprite(sources, className, x, y, size) {
+  const image = svgEl('image', {
+    class: className,
+    x, y,
+    width: size,
+    height: size,
+    preserveAspectRatio: 'xMidYMid meet',
+  });
+  let index = 0;
+  image.addEventListener('error', () => {
+    index += 1;
+    if (index < sources.length) image.setAttribute('href', sources[index]);
+    else image.remove();
+  });
+  image.setAttribute('href', sources[0]);
+  return image;
+}
+
 export function hexRender(container, params) {
   let current = params;
   const view = document.createElement('div');
@@ -58,6 +76,7 @@ export function hexRender(container, params) {
         hexes.push({ hex: { q, r }, key: `${q},${r}`, center, corners });
       }
     }
+    const centerByKey = new Map(hexes.map((h) => [h.key, h.center]));
     const left = minX - PADDING;
     const top = minY - PADDING;
     const width = maxX - minX + 2 * PADDING;
@@ -98,6 +117,18 @@ export function hexRender(container, params) {
       if (actor) polyByKey.get(hexKey(actor.hex))?.classList.add('turn-glow');
     }
 
+    // Obstacle sprites sit above the hex fill but below the tokens. The
+    // polygon keeps its own styling, so it remains a valid fallback.
+    for (const [key, obstacle] of obstacleByKey) {
+      if (!obstacle.image) continue;
+      const center = centerByKey.get(key);
+      if (!center) continue;
+      const size = hexSize * 1.2;
+      svg.append(
+        svgSprite([obstacle.image], 'obstacle-sprite', center.x - size / 2, center.y - size / 2, size),
+      );
+    }
+
     // Participant layer.
     for (const p of participants) {
       if (p.hp <= 0) continue;
@@ -135,6 +166,22 @@ export function hexRender(container, params) {
       });
       pos.textContent = POSITION_ICON[p.position] ?? '';
       g.append(pos);
+
+      if (p.kind === 'mob' && p.refId) {
+        const files = p.isElite
+          ? [`${p.refId}_elite.png`, `${p.refId}.png`]
+          : [`${p.refId}.png`];
+        const size = hexSize * 1.1;
+        g.append(
+          svgSprite(
+            files.map((file) => `/assets/mobs/${file}`),
+            'mob-icon',
+            -size / 2,
+            -size / 2,
+            size,
+          ),
+        );
+      }
 
       svg.append(g);
     }

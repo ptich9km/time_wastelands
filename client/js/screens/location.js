@@ -15,6 +15,7 @@ import {
 } from '../api.js';
 import { getLang, t } from '../i18n.js';
 import { TYPE_ICONS, TRAVEL_TIME_MS, travelWithProgress } from './map.js';
+import { npcPortrait } from '../icons.js';
 
 const REST_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -59,6 +60,9 @@ async function openNpcDialog(npcId, errorEl) {
   overlay.className = 'npc-dialog-overlay';
   const dialog = document.createElement('div');
   dialog.className = 'npc-dialog';
+
+  const portrait = npcPortrait(data.npc, '💬', 'npc-portrait npc-dialog-portrait');
+  dialog.append(portrait);
 
   const titleEl = document.createElement('h3');
   titleEl.textContent = t('ui.npc.dialog_title', { name: t(data.npc.nameKey) });
@@ -199,16 +203,19 @@ export function renderLocation(root, locationId, options) {
       const beggarEligible =
         character.money < 20 && character.hp_current < character.hp_max * 0.3;
       if (beggarEligible && currentLoc.npcIds?.length > 0) {
-        actionsEl.append(
-          makeButton(t('ui.location.button.beggar'), busy, () =>
-            runAction(() => beggar(currentLoc.npcIds[0]), (data) => {
-              messageEl.textContent = t('ui.npc.beggar.received', {
-                money: data.received.money,
-                hp: data.received.hp,
-              });
-            }),
-          ),
+        const beggarBtn = makeButton(t('ui.location.button.beggar'), busy, () =>
+          runAction(() => beggar(currentLoc.npcIds[0]), (data) => {
+            messageEl.textContent = t('ui.npc.beggar.received', {
+              money: data.received.money,
+              hp: data.received.hp,
+            });
+          }),
         );
+        beggarBtn.prepend(
+          npcPortrait('beggar', '💬', 'npc-portrait'),
+          document.createTextNode(' '),
+        );
+        actionsEl.append(beggarBtn);
       }
     }
 
@@ -311,7 +318,9 @@ export function renderLocation(root, locationId, options) {
     for (const npcId of loc.npcIds ?? []) {
       const btn = document.createElement('button');
       btn.className = 'btn btn-secondary npc-item';
-      btn.textContent = `💬 ${t(`npc.${npcId}.name`)}`;
+      const label = document.createElement('span');
+      label.textContent = t(`npc.${npcId}.name`);
+      btn.append(npcPortrait(npcId, '💬', 'npc-portrait'), label);
       btn.addEventListener('click', () => {
         errorEl.textContent = '';
         openNpcDialog(npcId, errorEl);

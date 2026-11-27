@@ -334,6 +334,7 @@
   "battle.error.no_weapon": "No weapon equipped.",
   "battle.error.no_ammo": "Out of ammo — reload required.",
   "battle.error.no_line_of_sight": "The target is out of line of sight.",
+  "battle.error.melee_blocked": "The barricade blocks your strike",
   "battle.error.out_of_range": "The target is out of weapon range.",
   "battle.error.occupied": "The hex is occupied.",
   "battle.error.not_adjacent": "You can only move to an adjacent hex.",

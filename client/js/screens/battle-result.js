@@ -3,6 +3,7 @@
 
 import { t } from '../i18n.js';
 import { audio } from '../audio.js';
+import { itemIcon } from '../icons.js';
 
 const TITLES = {
   victory: 'ui.battle.result.victory_title',
@@ -37,9 +38,7 @@ function lootBlock(rewards, items) {
     const item = byId.get(reward.itemId);
     const row = document.createElement('div');
     row.className = 'battle-result-loot-row';
-    const icon = document.createElement('span');
-    icon.className = 'battle-result-loot-icon';
-    icon.textContent = item?.icon ?? '•';
+    const icon = itemIcon(item, '•', 'battle-result-loot-icon item-icon');
     const name = document.createElement('span');
     name.textContent = item?.nameKey ? t(item.nameKey) : reward.itemId;
     const qty = document.createElement('span');

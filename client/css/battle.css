@@ -238,3 +238,9 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
+
+/* Stage 10c-3: sprite overlays must not steal hex hover/click events. */
+.obstacle-sprite,
+.battle-map-svg .mob-icon {
+  pointer-events: none;
+}

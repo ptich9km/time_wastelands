@@ -16,21 +16,35 @@ import { t, type Lang } from '../../i18n';
 
 const MAP_SIZE = 10;
 const PLAYER_SPAWN: HexCoord = { q: 2, r: 5 };
-// Stage 7: encounters can bring up to 5 mobs (pack spawn), so the spawn list
-// covers five hexes on the default 10x10 map.
+// Stage 10a-fix: packSizeByLevel can bring up to 16 mobs, so the spawn list
+// covers sixteen hexes on the default 10x10 map.
 const MOB_SPAWNS: HexCoord[] = [
   { q: 7, r: 5 },
   { q: 7, r: 4 },
   { q: 7, r: 6 },
   { q: 8, r: 5 },
   { q: 6, r: 5 },
+  { q: 8, r: 4 },
+  { q: 8, r: 6 },
+  { q: 6, r: 4 },
+  { q: 6, r: 6 },
+  { q: 9, r: 5 },
+  { q: 9, r: 4 },
+  { q: 9, r: 6 },
+  { q: 5, r: 5 },
+  { q: 5, r: 4 },
+  { q: 5, r: 6 },
+  { q: 9, r: 3 },
 ];
 
-const OBSTACLE_TYPES: Array<{ type: Obstacle['type']; blocksLos: boolean; blocksMove: boolean }> = [
-  { type: 'wall', blocksLos: true, blocksMove: true },
-  { type: 'rock', blocksLos: true, blocksMove: true },
-  { type: 'tree', blocksLos: true, blocksMove: true },
-  { type: 'crate', blocksLos: false, blocksMove: true },
+const OBSTACLE_TYPES: Array<Omit<Obstacle, 'hex'>> = [
+  { type: 'wall', blocksLos: true, blocksMove: true, blocksMelee: true, image: '/assets/obstacles/wall_slab.png' },
+  { type: 'tree', blocksLos: true, blocksMove: true, blocksMelee: true, image: '/assets/obstacles/dead_pine.png' },
+  { type: 'rock', blocksLos: true, blocksMove: true, blocksMelee: true, image: '/assets/obstacles/boulder.png' },
+  { type: 'small_building', blocksLos: true, blocksMove: true, blocksMelee: true, image: '/assets/obstacles/wall_factory.png' },
+  { type: 'barricade', blocksLos: false, blocksMove: true, blocksMelee: true, image: '/assets/obstacles/palisade.png' },
+  { type: 'crate', blocksLos: false, blocksMove: true, blocksMelee: false, image: '/assets/obstacles/crate_wood.png' },
+  { type: 'bush', blocksLos: false, blocksMove: false, blocksMelee: false, image: '/assets/obstacles/spore_tree.png' },
 ];
 
 function hexKey(h: HexCoord): string {

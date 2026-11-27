@@ -26,6 +26,11 @@ find client/js -name '*.js' -exec node --check {} \;
 - Server calls `setI18n()` at boot; the client caches its dictionary and refreshes it only on `setLang()` (startup or language switch). After editing i18n/data, restart `npm run dev` and hard-reload the browser.
 - `npm run validate-data` currently prints two expected non-fatal `institute_9` `levelRange` warnings; do not “fix” them unless asked.
 
+## Art generation (user rule)
+- When asking an image model for art here, always request a game sprite sheet / atlas, never an illustration or poster. Explicitly forbid small and narrow elements (chains, wires, thin barrels, thin branches, micro bolts); require chunky silhouettes that survive 32×32 / 48×48 / 128×128.
+- Kimi atlases: 2048×2048 PNG, flat magenta `#FF00FF` chroma key, fixed grid, no text/labels/shadows/grid lines. Transparent PNG is produced by cutting the keyed background with `art_extraction/tools/sprite_tools.py`, not by trusting model alpha.
+- Prompt set and data-to-panel mapping: `art_extraction/05-kimi-atlas-prompts.md`. Pipeline and failure cases: `art_extraction/01-pipeline.md` — `04-toolbox.md`. No art-generation skill is installed in this repo.
+
 ## Runtime and DB
 - `server/index.ts` is the real entry: load data/i18n → open DB → register REST + WS routes → serve `client/` statically on fixed port 3000.
 - Only one character exists (`id = 1`) in `game.db` (WAL mode). Tests use `:memory:`.

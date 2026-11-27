@@ -3,6 +3,7 @@
 
 import { getShop, getCharacter, getInventory, buyItem, sellItem } from '../api.js';
 import { t } from '../i18n.js';
+import { itemIcon } from '../icons.js';
 
 const RARITY_COLORS = {
   common: '#d4c9b8',
@@ -142,9 +143,7 @@ export function renderShop(root, shopId, options) {
       const row = document.createElement('div');
       row.className = `shop-row${buyable ? '' : ' disabled'}`;
 
-      const icon = document.createElement('span');
-      icon.className = 'shop-icon';
-      icon.textContent = entry.icon;
+      const icon = itemIcon(entry, '❓', 'shop-icon item-icon');
 
       const name = document.createElement('span');
       name.className = 'shop-name';
@@ -224,9 +223,7 @@ export function renderShop(root, shopId, options) {
       const rowEl = document.createElement('div');
       rowEl.className = 'shop-row';
 
-      const icon = document.createElement('span');
-      icon.className = 'shop-icon';
-      icon.textContent = item.icon;
+      const icon = itemIcon(item, '❓', 'shop-icon item-icon');
 
       const name = document.createElement('span');
       name.className = 'shop-name';

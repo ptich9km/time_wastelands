@@ -2,6 +2,7 @@
 
 import { t } from '../i18n.js';
 import { getInventory } from '../api.js';
+import { itemIcon } from '../icons.js';
 
 const SLOT_ORDER = ['weapon', 'head', 'torso', 'jacket', 'legs', 'boots'];
 
@@ -133,7 +134,14 @@ export function renderCharacter(root, character, options = {}) {
       value.className = 'stat-value';
       const eq = data.equipped[slot];
       const entry = eq ? data.items.find((i) => i.inventoryId === eq.inventoryId) : null;
-      value.textContent = entry ? `${entry.item.icon} ${t(entry.item.nameKey)}` : t('ui.inventory.slot.empty');
+      if (entry) {
+        const icon = itemIcon(entry.item, '❓', 'item-icon');
+        const label = document.createElement('span');
+        label.textContent = t(entry.item.nameKey);
+        value.replaceChildren(icon, document.createTextNode(' '), label);
+      } else {
+        value.textContent = t('ui.inventory.slot.empty');
+      }
       row.append(name, value);
       equipPanel.append(row);
     }

@@ -153,7 +153,7 @@ describe('applyAction: move', () => {
 
   it('стена → blocked', () => {
     const s = state((st) => {
-      st.map.obstacles.push({ hex: { q: 2, r: 3 }, type: 'wall', blocksLos: true, blocksMove: true });
+      st.map.obstacles.push({ hex: { q: 2, r: 3 }, type: 'wall', blocksLos: true, blocksMove: true, blocksMelee: true });
     });
     expect(act(s, { type: 'move', to: { q: 2, r: 3 } })).toMatchObject({
       ok: false,
@@ -188,7 +188,7 @@ describe('applyAction: shoot', () => {
     const res = act(state(), { type: 'shoot', targetId: 'mob_1', zone: 'torso' }, [0, 0.5, 0.99, 0.99]);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(mob(res.newState).hp).toBeLessThan(18);
+    expect(mob(res.newState).hp).toBeLessThan(22);
     expect(player(res.newState).weaponCharges).toBe(7);
     expect(player(res.newState).ap).toBe(21 - config.apCosts.shootLight);
     expect(res.logEntries.map((e) => e.type)).toEqual(['hit']);
@@ -202,7 +202,7 @@ describe('applyAction: shoot', () => {
     const res = act(s, { type: 'shoot', targetId: 'mob_1', zone: 'torso' }, [0.5]);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(mob(res.newState).hp).toBe(18);
+    expect(mob(res.newState).hp).toBe(22);
     expect(player(res.newState).weaponCharges).toBe(7);
     expect(res.logEntries.map((e) => e.type)).toEqual(['miss']);
   });
@@ -249,7 +249,7 @@ describe('applyAction: shoot', () => {
 
   it('нет линии видимости → no_line_of_sight', () => {
     const s = state((st) => {
-      st.map.obstacles.push({ hex: { q: 2, r: 3 }, type: 'wall', blocksLos: true, blocksMove: true });
+      st.map.obstacles.push({ hex: { q: 2, r: 3 }, type: 'wall', blocksLos: true, blocksMove: true, blocksMelee: true });
     });
     expect(act(s, { type: 'shoot', targetId: 'mob_1', zone: 'torso' })).toMatchObject({
       ok: false,
@@ -267,6 +267,46 @@ describe('applyAction: shoot', () => {
     });
   });
 
+  it('меlee через barricade → melee_blocked', () => {
+    const s = state((st) => {
+      player(st).equipment.weaponId = 'rusty_pipe';
+      player(st).weaponCharges = undefined;
+      st.map.obstacles.push({
+        hex: { q: 2, r: 3 }, type: 'barricade',
+        blocksLos: false, blocksMove: true, blocksMelee: true,
+      });
+    });
+    expect(act(s, { type: 'shoot', targetId: 'mob_1', zone: 'torso' })).toMatchObject({
+      ok: false,
+      error: 'melee_blocked',
+    });
+  });
+
+  it('ranged через barricade → ok (LOS не блокируется)', () => {
+    const s = state((st) => {
+      st.map.obstacles.push({
+        hex: { q: 2, r: 3 }, type: 'barricade',
+        blocksLos: false, blocksMove: true, blocksMelee: true,
+      });
+    });
+    const res = act(s, { type: 'shoot', targetId: 'mob_1', zone: 'torso' });
+    expect(res.ok).toBe(true);
+  });
+
+  it('меlee через crate → ok', () => {
+    const s = state((st) => {
+      player(st).equipment.weaponId = 'rusty_pipe';
+      player(st).weaponCharges = undefined;
+      mob(st).hex = { q: 2, r: 3 };
+      st.map.obstacles.push({
+        hex: { q: 2, r: 3 }, type: 'crate',
+        blocksLos: false, blocksMove: true, blocksMelee: false,
+      });
+    });
+    const res = act(s, { type: 'shoot', targetId: 'mob_1', zone: 'torso' });
+    expect(res.ok).toBe(true);
+  });
+
   it('неверная цель (игрок) → invalid_target', () => {
     expect(act(state(), { type: 'shoot', targetId: 'player', zone: 'torso' })).toMatchObject({
       ok: false,
@@ -279,7 +319,7 @@ describe('applyAction: shoot', () => {
     const res = act(state(), { type: 'shoot', targetId: 'mob_1', zone: 'torso' }, [0, 0, 0.01, 0.99]);
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(mob(res.newState).hp).toBe(18 - 9);
+    expect(mob(res.newState).hp).toBe(22 - 9);
     expect(res.logEntries[0].type).toBe('crit');
   });
 
@@ -294,7 +334,7 @@ describe('applyAction: shoot', () => {
     expect(res.newState.result).toBe('victory');
     expect(res.newState.phase).toBe('finished');
     expect(res.logEntries.map((e) => e.type)).toContain('death');
-    expect(battleVictoryXp({ state: res.newState, mobs, playerLevel: 1, config })).toBe(18);
+    expect(battleVictoryXp({ state: res.newState, mobs, playerLevel: 1, config })).toBe(22);
   });
 
   it('снайперская винтовка тратит свой AP-кост', () => {
@@ -392,7 +432,7 @@ describe('applyAction: setStance', () => {
 
   it('→ cover рядом со стеной: стоит 3 ОД', () => {
     const s = state((st) => {
-      st.map.obstacles.push({ hex: { q: 2, r: 3 }, type: 'wall', blocksLos: true, blocksMove: true });
+      st.map.obstacles.push({ hex: { q: 2, r: 3 }, type: 'wall', blocksLos: true, blocksMove: true, blocksMelee: true });
     });
     const res = act(s, { type: 'setStance', stance: 'cover' });
     expect(res.ok).toBe(true);
@@ -616,7 +656,7 @@ describe('battleHighlight', () => {
 
   it('shoot: LOS-гексы в пределах дальности (wall режет)', () => {
     const s = state((st) => {
-      st.map.obstacles.push({ hex: { q: 2, r: 3 }, type: 'wall', blocksLos: true, blocksMove: true });
+      st.map.obstacles.push({ hex: { q: 2, r: 3 }, type: 'wall', blocksLos: true, blocksMove: true, blocksMelee: true });
     });
     const res = battleHighlight({ state: s, action: 'shoot', config, items });
     expect(res.los).toBeDefined();

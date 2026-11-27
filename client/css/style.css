@@ -1037,3 +1037,22 @@ body {
 
 /* Stage 9: secondary note next to perk points. */
 .muted { opacity: 0.7; }
+
+/* Stage 10c-3: sprite icons; emoji spans remain as fallback. */
+.item-icon,
+.mob-icon,
+.npc-portrait {
+  display: inline-block;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+.npc-dialog-portrait {
+  width: 64px;
+  height: 64px;
+}
+.npc-item .npc-portrait {
+  margin-right: 6px;
+}

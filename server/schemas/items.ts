@@ -15,6 +15,7 @@ const BaseItem = z.object({
   nameKey: I18nKey,
   descriptionKey: I18nKey,
   icon: z.string().min(1).max(4),      // emoji
+  iconImage: z.string().min(1).optional(),
   price: z.number().int().min(1),
   weight: z.number().min(0),
   rarity: RaritySchema.default('common'),

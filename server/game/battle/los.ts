@@ -60,6 +60,55 @@ export function hasLineOfSight(params: {
   return true;
 }
 
+type MeleePathParams = {
+  from: HexCoord;
+  to: HexCoord;
+  obstacles: Obstacle[];
+  mapWidth?: number;
+  mapHeight?: number;
+};
+
+function inferBounds(hexes: HexCoord[]): { width: number; height: number } {
+  return {
+    width: Math.max(1, ...hexes.map((h) => h.q + 1)),
+    height: Math.max(1, ...hexes.map((h) => h.r + 1)),
+  };
+}
+
+/**
+ * Melee-specific path check. Unlike LOS, the endpoints are included: a melee
+ * strike cannot pass through a blocking hex the attacker or target occupies.
+ * Both the object form and the short `hasMeleePath(from, to, obstacles)` form
+ * are accepted.
+ */
+export function hasMeleePath(params: MeleePathParams): boolean;
+export function hasMeleePath(from: HexCoord, to: HexCoord, obstacles: Obstacle[]): boolean;
+export function hasMeleePath(
+  paramsOrFrom: MeleePathParams | HexCoord,
+  toArg?: HexCoord,
+  obstaclesArg?: Obstacle[],
+): boolean {
+  const isObject = 'from' in paramsOrFrom;
+  const from = isObject ? paramsOrFrom.from : paramsOrFrom;
+  const to = isObject ? paramsOrFrom.to : toArg!;
+  const obstacles = isObject ? paramsOrFrom.obstacles : obstaclesArg ?? [];
+  const bounds = inferBounds([from, to, ...obstacles.map((o) => o.hex)]);
+  const mapWidth = isObject ? paramsOrFrom.mapWidth ?? bounds.width : bounds.width;
+  const mapHeight = isObject ? paramsOrFrom.mapHeight ?? bounds.height : bounds.height;
+  if (hexEquals(from, to)) return true;
+  if (!inBounds(from, mapWidth, mapHeight) || !inBounds(to, mapWidth, mapHeight)) {
+    return false;
+  }
+  const blocking = new Set(
+    obstacles.filter((o) => o.blocksMelee).map((o) => hexKey(o.hex)),
+  );
+  for (const hex of [from, ...lineHexes(from, to), to]) {
+    if (!inBounds(hex, mapWidth, mapHeight)) return false;
+    if (blocking.has(hexKey(hex))) return false;
+  }
+  return true;
+}
+
 export type MoveCheckResult =
   | { ok: true }
   | { ok: false; reason: 'out_of_bounds' | 'blocked' | 'occupied' | 'not_adjacent' };

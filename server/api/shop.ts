@@ -20,6 +20,7 @@ function serializeShop(app: FastifyInstance, shop: Shop, states: ShopStateRow[])
         itemId: item.id,
         nameKey: item.nameKey,
         icon: item.icon,
+        ...(item.iconImage ? { iconImage: item.iconImage } : {}),
         rarity: item.rarity,
         price: getPrice(item.price, shop.multiplier, state?.inflation ?? 0),
         stock: state?.stock ?? 0,

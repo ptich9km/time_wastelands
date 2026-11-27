@@ -30,6 +30,7 @@ export type ActionError =
   | 'invalid_target'
   | 'out_of_range'
   | 'no_line_of_sight'
+  | 'melee_blocked'
   | 'no_weapon'
   | 'no_ammo'
   | 'occupied'

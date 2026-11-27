@@ -104,7 +104,7 @@ describe('rollEncounter', () => {
     if (roll.encounter) expect(roll.mobIds.length).toBeGreaterThan(0);
   });
 
-  it('pipe_rat (pack) → 3–5 мобов', () => {
+  it('pipe_rat (pack) → 5–8 мобов для levelRange[1] = 5', () => {
     const low = rollEncounter({
       location: makeLocation(),
       worldState: null,
@@ -119,8 +119,8 @@ describe('rollEncounter', () => {
       mobs: gameData.mobs.mobs,
       rng: seqRng([0, 0, 0.999]),
     });
-    expect(low.encounter && low.mobIds.length).toBe(3);
-    expect(high.encounter && high.mobIds.length).toBe(5);
+    expect(low.encounter && low.mobIds.length).toBe(5);
+    expect(high.encounter && high.mobIds.length).toBe(8);
     if (low.encounter) expect(new Set(low.mobIds)).toEqual(new Set(['pipe_rat']));
   });
 
@@ -237,7 +237,7 @@ describe('stage 7 API', () => {
     expect(body.character.location_id).toBe('ash_road');
     expect(body.battle).not.toBeNull();
     const mobs = body.battle.participants.filter((p: { kind: string }) => p.kind === 'mob');
-    expect(mobs.length).toBe(3); // pipe_rat pack, min roll
+    expect(mobs.length).toBe(5); // pipe_rat pack, levelRange[1] = 3 → 5–8, min roll
     expect(mobs.every((p: { refId: string }) => p.refId === 'pipe_rat')).toBe(true);
   });
 

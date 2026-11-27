@@ -8,6 +8,7 @@ export const NpcSchema = z.object({
   nameKey: I18nKey,
   locationId: IdSchema,
   role: z.string().min(1), // UI icon hint (blacksmith / medic / miner)
+  portrait: z.string().min(1).optional(),
   dialogueKeys: z.array(I18nKey).min(1),
   rumorKeys: z.array(I18nKey).default([]),
 });

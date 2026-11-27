@@ -73,9 +73,13 @@ export type Participant = z.infer<typeof ParticipantSchema>;
 
 export const ObstacleSchema = z.object({
   hex: HexCoordSchema,
-  type: z.enum(['wall', 'rock', 'tree', 'crate']),
+  type: z.enum([
+    'wall', 'rock', 'tree', 'crate', 'barricade', 'small_building', 'bush',
+  ]),
   blocksLos: z.boolean(),
   blocksMove: z.boolean(),
+  blocksMelee: z.boolean(),
+  image: z.string().min(1).optional(),
 });
 export type Obstacle = z.infer<typeof ObstacleSchema>;
 

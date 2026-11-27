@@ -257,12 +257,12 @@ describe('stage 6a: WebSocket battle and post-battle sync', () => {
       lang: 'ru',
       rng: () => 0.5,
     });
-    expect(first.rewards.xp).toBe(18);
+    expect(first.rewards.xp).toBe(22);
     expect(first.rewards.levelUp).toBe(true);
     expect(first.rewards.newLevel).toBe(2);
     expect(first.rewards.loot).toEqual([{ itemId: 'rat_pelt', qty: 1 }]);
     const after = getCharacter(app.db)!;
-    expect(after.xp).toBe(8); // 590 + 18 - 600
+    expect(after.xp).toBe(12); // 590 + 22 - 600
     expect(after.level).toBe(2);
     expect(after.hp_current).toBe(70); // level-up restores HP (stage 9 table: level 2 hpMax 70)
     expect(getInventory(app.db).some((r) => r.itemId === 'rat_pelt')).toBe(true);
@@ -280,7 +280,7 @@ describe('stage 6a: WebSocket battle and post-battle sync', () => {
     });
     expect(second.rewards).toEqual(first.rewards);
     expect(second.logEntries).toHaveLength(0);
-    expect(getCharacter(app.db)!.xp).toBe(8);
+    expect(getCharacter(app.db)!.xp).toBe(12);
     expect(getInventory(app.db).find((r) => r.itemId === 'rat_pelt')!.qty).toBe(1);
   });
 

@@ -105,6 +105,7 @@ const wall = (q: number, r: number): Obstacle => ({
   type: 'wall',
   blocksLos: true,
   blocksMove: true,
+  blocksMelee: true,
 });
 
 describe('runEnemyTurn: aggressive mobs', () => {
@@ -113,7 +114,7 @@ describe('runEnemyTurn: aggressive mobs', () => {
     state.round = 1;
     const { newState, logEntries } = run(state, [0, 0, 0.99, 0.99]);
 
-    expect(playerOf(newState).hp).toBe(63); // pipe_rat 2..5, min roll = 2
+    expect(playerOf(newState).hp).toBe(61); // pipe_rat 4..8, min roll = 4
     expect(newState.round).toBe(2);
     expect(playerOf(newState).ap).toBe(21);
     expect(mobOf(newState).ap).toBe(mobOf(newState).apMax);
@@ -154,7 +155,7 @@ describe('runEnemyTurn: aggressive mobs', () => {
     state.turnOrder = ['player', 'mob_1', 'mob_2'];
     const { newState, logEntries } = run(state, [0, 0, 0.99, 0.99, 0, 0, 0.99, 0.99]);
 
-    expect(playerOf(newState).hp).toBe(65 - 2 - 2);
+    expect(playerOf(newState).hp).toBe(65 - 4 - 2); // pipe_rat min 4, ash_dog min 2
     expect(logEntries.filter((e) => e.type === 'hit')).toHaveLength(2);
   });
 

@@ -93,6 +93,7 @@ const wall = (q: number, r: number): Obstacle => ({
   type: 'wall',
   blocksLos: true,
   blocksMove: true,
+  blocksMelee: true,
 });
 
 describe('decideMobAction: aggressive', () => {

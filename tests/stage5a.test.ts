@@ -82,8 +82,8 @@ describe('battle-repo: сериализация/восстановление', (
   it('сериализация: 3 участника, 2 препятствия, 5 записей лога → deepEqual', () => {
     const state = makeState(db, ['pipe_rat', 'ash_dog']);
     state.map.obstacles = [
-      { hex: { q: 4, r: 4 }, type: 'wall', blocksLos: true, blocksMove: true },
-      { hex: { q: 5, r: 3 }, type: 'crate', blocksLos: false, blocksMove: true },
+      { hex: { q: 4, r: 4 }, type: 'wall', blocksLos: true, blocksMove: true, blocksMelee: true },
+      { hex: { q: 5, r: 3 }, type: 'crate', blocksLos: false, blocksMove: true, blocksMelee: false },
     ];
     state.log = Array.from({ length: 5 }, (_, i) => logEntry(1, i + 1));
     createBattle(db, state);

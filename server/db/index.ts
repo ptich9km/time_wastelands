@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
 export function openDb(dbFile: string): Database.Database {
@@ -7,7 +8,7 @@ export function openDb(dbFile: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
   const schema = fs.readFileSync(
-    path.join(path.dirname(new URL(import.meta.url).pathname), 'schema.sql'),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'schema.sql'),
     'utf8',
   );
   db.exec(schema);

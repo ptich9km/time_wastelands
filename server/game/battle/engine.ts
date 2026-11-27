@@ -11,7 +11,7 @@ import {
   rollPenetration,
   xpForKill,
 } from './formulas';
-import { canMoveTo, hasLineOfSight, reachableHexes } from './los';
+import { canMoveTo, hasLineOfSight, hasMeleePath, reachableHexes } from './los';
 import { decideMobAction, mobAttackAp, mobMoveAp } from './ai';
 import { hexDistance, hexKey, type HexCoord } from './hex';
 import type {
@@ -215,6 +215,18 @@ export function applyAction(params: {
         return { ok: false, error: 'no_ammo' };
       }
       const distance = hexDistance(player.hex, target.hex);
+      // Melee weapons use a separate path rule: a barricade blocks the strike
+      // even though it does not block line of sight for ranged attacks.
+      if (weapon.range === 1) {
+        const meleePath = hasMeleePath({
+          from: player.hex,
+          to: target.hex,
+          obstacles: next.map.obstacles,
+          mapWidth: next.map.width,
+          mapHeight: next.map.height,
+        });
+        if (!meleePath) return { ok: false, error: 'melee_blocked' };
+      }
       if (distance > weapon.range) return { ok: false, error: 'out_of_range' };
       const los = hasLineOfSight({
         from: player.hex,
@@ -657,7 +669,18 @@ export function battleHighlight(params: {
     for (let q = 0; q < state.map.width; q++) {
       const to = { q, r };
       if (hexDistance(player.hex, to) > weapon.range) continue;
+      const pathOk =
+        weapon.range === 1
+          ? hasMeleePath({
+              from: player.hex,
+              to,
+              obstacles: state.map.obstacles,
+              mapWidth: state.map.width,
+              mapHeight: state.map.height,
+            })
+          : true;
       if (
+        pathOk &&
         hasLineOfSight({
           from: player.hex,
           to,
